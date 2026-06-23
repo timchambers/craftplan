@@ -66,6 +66,7 @@ defmodule Mix.Tasks.Bottle.Import do
         unknown_pids: preview_result.unknown_pids,
         inserted_orders: 0,
         skipped_orders: 0,
+        restamped_orders: 0,
         failed_orders: 0,
         elapsed_ms: 0,
         api_url: ApiClient.api_url_for_log()
@@ -139,20 +140,22 @@ defmodule Mix.Tasks.Bottle.Import do
         max_concurrency: concurrency,
         timeout: 30_000
       )
-      |> Enum.reduce({0, 0, []}, fn
-        {:ok, {:ok, _}}, {ins, sk, fl} -> {ins + 1, sk, fl}
-        {:ok, {:skip, :already_imported}}, {ins, sk, fl} -> {ins, sk + 1, fl}
-        {:ok, {:error, reason}}, {ins, sk, fl} -> {ins, sk, [reason | fl]}
-        {:exit, reason}, {ins, sk, fl} -> {ins, sk, [reason | fl]}
+      |> Enum.reduce({0, 0, 0, []}, fn
+        {:ok, {:ok, :created}}, {ins, re, sk, fl} -> {ins + 1, re, sk, fl}
+        {:ok, {:ok, :restamped}}, {ins, re, sk, fl} -> {ins, re + 1, sk, fl}
+        {:ok, {:skip, :already_imported}}, {ins, re, sk, fl} -> {ins, re, sk + 1, fl}
+        {:ok, {:error, reason}}, {ins, re, sk, fl} -> {ins, re, sk, [reason | fl]}
+        {:exit, reason}, {ins, re, sk, fl} -> {ins, re, sk, [reason | fl]}
       end)
 
-    {inserted, skipped, failed} = results
+    {inserted, restamped, skipped, failed} = results
     elapsed = System.monotonic_time(:millisecond) - started_at
 
     summary = %{
       unknown_pids: [],
       inserted_orders: inserted,
       skipped_orders: skipped,
+      restamped_orders: restamped,
       failed_orders: length(failed),
       failures: Enum.reverse(failed),
       elapsed_ms: elapsed,
@@ -219,7 +222,7 @@ defmodule Mix.Tasks.Bottle.Import do
   # - already_imported: MapSet of invoiceNumber strings
   # - unpaid: MapSet of %{invoice: invoiceNumber, id: id} for non-PAID orders
   defp load_existing_orders do
-    ""
+    nil
     |> Stream.unfold(fn
       :done ->
         nil
@@ -235,7 +238,18 @@ defmodule Mix.Tasks.Bottle.Import do
           {:ok, %{"listOrders" => %{"results" => rows, "endKeyset" => cur}}} ->
             {rows, cur}
 
-          _ ->
+          {:error, reason} ->
+            Mix.shell().error(
+              "load_existing_orders: listOrders query failed — #{inspect(reason)}; treating as empty (idempotency lost)"
+            )
+
+            nil
+
+          other ->
+            Mix.shell().error(
+              "load_existing_orders: unexpected listOrders response — #{inspect(other)}; treating as empty (idempotency lost)"
+            )
+
             nil
         end
     end)
@@ -320,6 +334,7 @@ defmodule Mix.Tasks.Bottle.Import do
         unknown_pids: summary.unknown_pids,
         inserted_orders: summary.inserted_orders,
         skipped_orders: summary.skipped_orders,
+        restamped_orders: Map.get(summary, :restamped_orders, 0),
         failed_orders: summary.failed_orders,
         elapsed_ms: summary.elapsed_ms,
         api_url: Map.get(summary, :api_url, "")
@@ -331,10 +346,11 @@ defmodule Mix.Tasks.Bottle.Import do
   defp format_summary(s) do
     [
       "Bottle import summary\n",
-      "  inserted orders: #{s.inserted_orders}\n",
-      "  skipped orders:  #{s.skipped_orders}\n",
-      "  failed orders:   #{s.failed_orders}\n",
-      "  unknown PIDs:    #{length(s.unknown_pids)}#{format_unknowns(s.unknown_pids)}\n",
+      "  inserted orders:  #{s.inserted_orders}\n",
+      "  skipped orders:   #{s.skipped_orders}\n",
+      "  restamped orders: #{Map.get(s, :restamped_orders, 0)}\n",
+      "  failed orders:    #{s.failed_orders}\n",
+      "  unknown PIDs:     #{length(s.unknown_pids)}#{format_unknowns(s.unknown_pids)}\n",
       "  elapsed: #{s.elapsed_ms}ms\n"
     ]
   end

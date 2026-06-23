@@ -95,7 +95,7 @@ Each run appends a line to `priv/imports/bottle/bottle_import_log.jsonl`. Check 
 tail -1 priv/imports/bottle/bottle_import_log.jsonl | jq
 ```
 
-The summary and audit log report `inserted_orders`, `skipped_orders`, and `failed_orders`. A first run shows ~0 skips; a re-run shows everything skipped (idempotency). Confirm `inserted_orders + skipped_orders == total orders in window`, `failed_orders == 0`, and `api_url` shows the expected target.
+The summary and audit log report `inserted_orders`, `skipped_orders`, `restamped_orders`, and `failed_orders`. A first run shows ~0 skips; a clean re-run shows everything skipped (idempotency). Confirm `inserted_orders + skipped_orders + restamped_orders == total orders in window`, `failed_orders == 0`, and `api_url` shows the expected target. (`restamped_orders` is normally 0 except after a partial-failure recovery re-run where some orders were imported but not yet marked paid.)
 
 ## Idempotency
 

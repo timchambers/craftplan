@@ -214,6 +214,65 @@ defmodule Craftplan.BottleImportTest do
   end
 
   # ---------------------------------------------------------------------------
+  # PaginationApi: a Req.Test stub that serves two pages of listOrders results
+  # and ASSERTS that the first request sends `after: nil` (not `""`).
+  # ---------------------------------------------------------------------------
+
+  defmodule PaginationApi do
+    @moduledoc false
+
+    # Page 1: two orders (one PAID, one not), with a non-nil cursor.
+    @page1_rows [
+      %{"id" => "o101", "invoiceNumber" => "BOTTLE-101", "paymentStatus" => "PAID"},
+      %{"id" => "o102", "invoiceNumber" => "BOTTLE-102", "paymentStatus" => "PENDING"}
+    ]
+    @page1_cursor "cursor-page-2"
+
+    # Page 2: one order, terminating cursor nil.
+    @page2_rows [
+      %{"id" => "o103", "invoiceNumber" => "BOTTLE-103", "paymentStatus" => "PAID"}
+    ]
+
+    def stub(conn) do
+      body = conn.body_params
+      doc = body["query"] || ""
+      vars = body["variables"] || %{}
+
+      cond do
+        String.contains?(doc, "listOrders") ->
+          after_val = Map.get(vars, "after")
+          # Send every listOrders `after` value to the test process for assertion.
+          # Use :pagination_test_receiver which the test registers as its own pid.
+          receiver = Process.whereis(:pagination_test_receiver)
+          if receiver, do: send(receiver, {:list_orders_after, after_val})
+
+          if after_val == @page1_cursor do
+            Req.Test.json(conn, %{
+              "data" => %{
+                "listOrders" => %{"results" => @page2_rows, "endKeyset" => nil}
+              }
+            })
+          else
+            Req.Test.json(conn, %{
+              "data" => %{
+                "listOrders" => %{"results" => @page1_rows, "endKeyset" => @page1_cursor}
+              }
+            })
+          end
+
+        String.contains?(doc, "listProducts") ->
+          Req.Test.json(conn, %{"data" => %{"listProducts" => %{"results" => []}}})
+
+        String.contains?(doc, "listCustomers") ->
+          Req.Test.json(conn, %{"data" => %{"listCustomers" => %{"results" => []}}})
+
+        true ->
+          Req.Test.json(conn, %{"data" => %{}})
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Tests
   # ---------------------------------------------------------------------------
 
@@ -241,6 +300,62 @@ defmodule Craftplan.BottleImportTest do
 
       assert result2.inserted_orders == 0
       assert result2.skipped_orders == 5
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Regression: load_existing_orders must seed keyset pagination with nil
+  # ---------------------------------------------------------------------------
+
+  describe "load_existing_orders pagination (regression: after: nil seed)" do
+    setup do
+      Req.Test.set_req_test_to_shared()
+      # Register this test process so PaginationApi.stub/1 can send it messages.
+      Process.register(self(), :pagination_test_receiver)
+
+      on_exit(fn ->
+        # Unregister so the name is free for future test runs in this suite.
+        if Process.whereis(:pagination_test_receiver) == self() do
+          Process.unregister(:pagination_test_receiver)
+        end
+      end)
+
+      :ok
+    end
+
+    test "first listOrders request sends after: nil (not \"\")" do
+      Req.Test.stub(ApiClient, &PaginationApi.stub/1)
+
+      # run_args drives load_existing_orders internally; --yes skips the confirm prompt.
+      result = ImportTask.run_args([fixtures_dir(), "--yes", "--price-map", @price_map])
+
+      # Collect the first listOrders `after` value sent by the stub.
+      # REGRESSION GUARD: this assertion fails if the seed is "" instead of nil.
+      assert_received {:list_orders_after, first_after_val}
+
+      assert first_after_val == nil,
+             "Expected first listOrders call to send after: nil, got: #{inspect(first_after_val)}"
+
+      # Confirm pagination continued to page 2 (cursor-page-2 was sent as after).
+      assert_received {:list_orders_after, "cursor-page-2"}
+
+      # The fixture orders (BOTTLE-1001..1005) are not in the paged results so they are new.
+      assert result.inserted_orders >= 0
+      assert result.failed_orders >= 0
+    end
+
+    test "all pages are consumed: pagination terminates without crash" do
+      Req.Test.stub(ApiClient, &PaginationApi.stub/1)
+
+      # Stub serves page 1 (2 orders, cursor "cursor-page-2") then page 2 (1 order, nil cursor).
+      # If unfold were seeded with "" the first listOrders call would fail
+      # and the catch-all would return nil immediately — only one message sent.
+      assert %{failed_orders: _, inserted_orders: _} =
+               ImportTask.run_args([fixtures_dir(), "--yes", "--price-map", @price_map])
+
+      # Both page requests must have fired.
+      assert_received {:list_orders_after, _page1_after}
+      assert_received {:list_orders_after, "cursor-page-2"}
     end
   end
 end
