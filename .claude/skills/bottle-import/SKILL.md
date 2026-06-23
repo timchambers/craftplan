@@ -15,7 +15,19 @@ This skill ingests a Bottle XLSX into Craftplan in two stages: a Python extracto
 
 ## Prerequisites
 
-- **Elixir version**: This project pins Elixir 1.18.3. Verify your local version matches, or run `mise install` (if using mise) before running `mix` commands.
+- **Toolchain / `mix` setup (DO THIS FIRST):** The project pins Erlang + Elixir via `.tool-versions` (currently Erlang 27.2.4 / Elixir 1.18.3-otp-27). In a non-interactive shell, a bare `mix` — and even `mise exec -- mix` — can resolve to a *system* Elixir (e.g. 1.19.5 / OTP 29): mise puts Elixir on `PATH` but **not** Erlang, so the wrong runtime is used and Hex crashes with:
+
+  ```
+  Could not start Hex. ... The module Hex.Repo was given as a child to a supervisor but it does not exist
+  ```
+
+  Fix — prepend the mise install bins (version-agnostic; reads `.tool-versions`) in the **same shell** as every `mix` command below:
+
+  ```bash
+  export PATH="$(mise where erlang)/bin:$(mise where elixir)/bin:$PATH"
+  ```
+
+  Verify: `elixir --version` should report `Elixir 1.18.3 (compiled with Erlang/OTP 27)` and `erl` should be OTP 27. (Plain `mise install` is **not** sufficient — the `PATH` export is what makes `mix` pick up Erlang.)
 
 - **Deploy-first ordering (CRITICAL):** The Order/Product GraphQL field-exposure PR (the one that makes `Product.sku` and Order `invoice_number`/`payment_status`/`paid_at` public/filterable, allows setting paid via `updateOrder`, registers the payment-status enum, and adds the granular `update` API scope) **MUST be merged and deployed to the target Craftplan instance before running the importer against it.** Running against an instance that lacks these changes will fail — those fields and mutations are absent from the schema.
 
@@ -54,14 +66,18 @@ wc -l <run_dir>/*.csv
 
 Confirm row counts look sensible. If `orders.csv` has zero rows in the window, halt — usually means the wrong date range.
 
-### 3. Set env vars (production target)
+### 3. Set up the shell (toolchain + env vars)
 
 ```bash
-export CRAFTPLAN_API_URL=https://plan.breadparavion.com   # production — required
-export CRAFTPLAN_API_KEY=cpk_...                          # required
+# Pin the toolchain (see Prerequisites — without this, mix crashes Hex):
+export PATH="$(mise where erlang)/bin:$(mise where elixir)/bin:$PATH"
+
+# Target (both required — the task raises if either is unset):
+export CRAFTPLAN_API_URL=https://plan.breadparavion.com   # production
+export CRAFTPLAN_API_KEY=cpk_...
 ```
 
-Both are required; the task raises if either is unset (no localhost fallback). Only set `CRAFTPLAN_API_URL` to a local URL for deliberate dev testing.
+Run the `mix` steps below in this same shell. Only set `CRAFTPLAN_API_URL` to a local URL for deliberate dev testing.
 
 ### 4. Preview gate
 
