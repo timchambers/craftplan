@@ -34,6 +34,9 @@ config :craftplan, CraftplanWeb.Endpoint,
   secret_key_base: "IPun5u1kwt9+i88jrjN5mJzlM1E6BJE68ZGIG0169TQxjb6GAKdivKt5SWLHYP26",
   server: false
 
+config :craftplan, :bottle_api_key, "cpk_test"
+config :craftplan, :bottle_api_req_options, plug: {Req.Test, Craftplan.BottleImport.ApiClient}
+config :craftplan, :bottle_api_url, "http://test.local"
 config :craftplan, token_signing_secret: "/7GrJHgmCNYkIsiOKCsK28JJckAxvMLD"
 
 config :logger, level: :warning
