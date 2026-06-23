@@ -104,8 +104,11 @@ defmodule CraftplanWeb.ProductionBatchLive.Show do
               <.summary_card label="Produced" value={format_quantity(@totals)}>
                 <div class="text-xs text-stone-500">Total units in this batch</div>
               </.summary_card>
-              <.summary_card label="Produced At" value={nil}>
-                <.datetime value={@produced_at} time_zone={@time_zone} />
+              <.summary_card
+                label="Produced At"
+                value={(@produced_at && format_datetime(@produced_at, @time_zone)) || "—"}
+              >
+                <div class="text-xs text-stone-500">Captured from completion events</div>
               </.summary_card>
               <.summary_card
                 label="Average Unit Cost"
