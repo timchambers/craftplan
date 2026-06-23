@@ -34,8 +34,12 @@ defmodule CraftplanWeb.PurchasingLive.Show do
           </:item>
           <:item title="Supplier">{@po.supplier.name}</:item>
           <:item title="Status">{@po.status}</:item>
-          <:item title="Ordered At">{format_date(@po.ordered_at, @time_zone)}</:item>
-          <:item title="Received At">{format_date(@po.received_at, @time_zone)}</:item>
+          <:item title="Ordered At">
+            <.datetime value={@po.ordered_at} time_zone={@time_zone} />
+          </:item>
+          <:item title="Received At">
+            <.datetime value={@po.received_at} time_zone={@time_zone} />
+          </:item>
         </.list>
       </.tabs_content>
       <.tabs_content :if={@live_action not in [:show]}>
@@ -45,7 +49,9 @@ defmodule CraftplanWeb.PurchasingLive.Show do
             <:col :let={i} label="Quantity">{format_amount(i.material.unit, i.quantity)}</:col>
             <:col :let={i} label="Unit Price">
               {format_unit_price(@settings.currency, i.unit_price || Decimal.new(0))}
-              <span class="text-xs text-zinc-500">/ {Craftplan.Types.Unit.abbreviation(i.material.unit)}</span>
+              <span class="text-xs text-zinc-500">
+                / {Craftplan.Types.Unit.abbreviation(i.material.unit)}
+              </span>
             </:col>
           </.table>
         </div>

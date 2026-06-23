@@ -29,7 +29,7 @@ defmodule CraftplanWeb.ProductLive.FormComponentRecipe do
             <span> · </span>
             <span>Changed on</span>
             <span class="underline decoration-stone-400 decoration-dashed">
-              {@bom.published_at && format_date(@bom.published_at)}
+              <.datetime :if={@bom.published_at} value={@bom.published_at} />
             </span>
           </div>
         </div>
@@ -703,7 +703,7 @@ defmodule CraftplanWeb.ProductLive.FormComponentRecipe do
           <:col :let={b} label="Version">v{b.version}</:col>
           <:col :let={b} label="Status">{b.status}</:col>
           <:col :let={b} label="Published">
-            {if b.published_at, do: format_date(b.published_at, format: :short), else: "-"}
+            <.datetime value={b.published_at} empty="-" />
           </:col>
           <:col :let={b} label="Unit Cost">
             {case b.rollup do
