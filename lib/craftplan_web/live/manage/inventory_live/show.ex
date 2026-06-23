@@ -2,11 +2,11 @@ defmodule CraftplanWeb.InventoryLive.Show do
   @moduledoc false
   use CraftplanWeb, :live_view
 
-  require Ash.Query
-
   alias Craftplan.Inventory
   alias Craftplan.Inventory.Movement
   alias CraftplanWeb.Navigation
+
+  require Ash.Query
 
   defp movements_query do
     Movement
@@ -70,7 +70,9 @@ defmodule CraftplanWeb.InventoryLive.Show do
             </.kbd>
           </:item>
           <:item title="Price">
-            {format_unit_price(@settings.currency, @material.price)} / {Craftplan.Types.Unit.abbreviation(@material.unit)}
+            {format_unit_price(@settings.currency, @material.price)} / {Craftplan.Types.Unit.abbreviation(
+              @material.unit
+            )}
           </:item>
           <:item title="Allergens">
             <div class="flex-inline items-center space-x-1">
@@ -155,11 +157,13 @@ defmodule CraftplanWeb.InventoryLive.Show do
             </:empty>
 
             <:col :let={entry} label="Date">
-              {format_time(entry.occurred_at || entry.inserted_at, @time_zone)}
+              <.datetime value={entry.occurred_at || entry.inserted_at} time_zone={@time_zone} />
             </:col>
 
             <:col :let={entry} label="Quantity">
-              <span class={if Decimal.negative?(entry.quantity), do: "text-rose-700", else: "text-emerald-700"}>
+              <span class={
+                if Decimal.negative?(entry.quantity), do: "text-rose-700", else: "text-emerald-700"
+              }>
                 {format_amount(@material.unit, entry.quantity)}
               </span>
             </:col>
@@ -353,7 +357,7 @@ defmodule CraftplanWeb.InventoryLive.Show do
   end
 
   @impl true
-  def handle_info({:saved, %Inventory.Movement{material_id: material_id}}, socket) do
+  def handle_info({:saved, %Movement{material_id: material_id}}, socket) do
     material =
       Inventory.get_material_by_id!(material_id,
         actor: socket.assigns[:current_user],
@@ -377,6 +381,7 @@ defmodule CraftplanWeb.InventoryLive.Show do
   # If the reason starts with "PO <reference> receive", split out the reference
   # so we can link to the purchase order page. Otherwise render as plain text.
   defp render_reason(nil), do: assigns_to_text("")
+
   defp render_reason(reason) when is_binary(reason) do
     case Regex.run(~r/^PO\s+(\S+)\s+(.*)$/, reason) do
       [_, po_ref, rest] ->

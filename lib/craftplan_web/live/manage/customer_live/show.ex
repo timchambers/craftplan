@@ -60,10 +60,10 @@ defmodule CraftplanWeb.CustomerLive.Show do
               />
             </:col>
             <:col :let={order} label="Created at">
-              {format_time(order.inserted_at, @time_zone)}
+              <.datetime value={order.inserted_at} time_zone={@time_zone} />
             </:col>
             <:col :let={order} label="Delivery Date">
-              {format_time(order.delivery_date, @time_zone)}
+              <.datetime value={order.delivery_date} time_zone={@time_zone} />
             </:col>
             <:col :let={order} label="Total">
               {format_money(@settings.currency, order.total_cost)}
