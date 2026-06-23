@@ -79,7 +79,7 @@ defmodule Craftplan.BottleImport.Queries do
     """
     mutation($input: CreateOrderInput!) {
       createOrder(input: $input) {
-        result { id invoiceNumber items }
+        result { id invoiceNumber }
         errors { message shortMessage fields }
       }
     }
