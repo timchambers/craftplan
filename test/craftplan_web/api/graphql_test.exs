@@ -97,6 +97,26 @@ defmodule CraftplanWeb.Api.GraphqlTest do
       assert [%{"sku" => "BOTTLE-PID-TEST1"}] = results
     end
 
+    test "listOrders can filter by invoiceNumber and read payment fields", %{conn: conn} do
+      {raw_key, _api_key, admin} = create_api_key!(%{"orders" => ["read", "create"], "customers" => ["create"]})
+      customer = Factory.create_customer!(%{first_name: "Inv", last_name: "Probe"}, admin)
+      Factory.create_order_with_items!(customer, [], invoice_number: "BOTTLE-INVTEST")
+
+      query = """
+      query($pat: String!) {
+        listOrders(filter: {invoiceNumber: {like: $pat}}) {
+          results { id invoiceNumber paymentStatus paidAt }
+        }
+      }
+      """
+
+      resp = graphql(conn, raw_key, query, %{"pat" => "BOTTLE-%"})
+
+      assert is_nil(resp["errors"])
+      results = get_in(resp, ["data", "listOrders", "results"])
+      assert Enum.any?(results, &(&1["invoiceNumber"] == "BOTTLE-INVTEST"))
+    end
+
     test "key without scope sees empty products list", %{conn: conn} do
       {raw_key, _api_key, admin} =
         create_api_key!(%{"orders" => ["read"]})
