@@ -9,4 +9,31 @@
 # Format: "IGF code": craftplan-sku
 # Keep quoted — some IGF codes are numeric, some alphanumeric (e.g. NSSA357).
 
-mappings: {}
+mappings:
+  "105575": oats-rolled-org-gf-15kg
+  "105576": oats-rolled-gf-15kg
+  "105576P": oats-rolled-gf-11lb
+  "105642": eggs-pasture-lg
+  "107838": parchment-16x24-500
+  "108587": rhubarb-iqf
+  "108694": oil-avocado-ev
+  "109780": sugar-cane-white-50lb
+  "20909": honey-wildflower
+  "25051": pan-coating-vegalene
+  "340262": choc-valrhona-60-8mm
+  "345016": cocoa-nibs-grue-cacao
+  "345035": choc-tcho-62-mighty
+  "34998": flour-kasp
+  "35019": flour-ww-fsg
+  "35038P": malt-diastatic
+  "35151": salt-kosher-dc
+  "35160": sugar-cane-white-25lb
+  "35164": sugar-brown-dark
+  "35301P": yeast-saf-gold
+  "40167": butter-unsalted-aa
+  "65150P": pecans-pieces-raw
+  "65190": raisins-thompson-dark
+  "NSFL500": flour-galahad
+  "NSMO200P": molasses-grandmas
+  "NSSA357": salt-sel-gris
+  "NSVA201": vanilla-extract-mada

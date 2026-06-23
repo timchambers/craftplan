@@ -67,9 +67,8 @@ export CRAFTPLAN_API_KEY=cpk_...
 mix bottle.import <run_dir>
 ```
 
-The task checks all PIDs in `order_items.csv` against the API (`listProducts`) and `price_map.yml`. It prints a preview block. Inspect it for:
+The task checks all PIDs in `order_items.csv` against the API (`listProducts`) and `price_map.yml`. It resolves products and lists any **unknown PIDs**. Inspect the preview for:
 - **Unknown PIDs** — if any, the task aborts (exit code 2) with a list. Either (a) create those Products in Craftplan via Manage → Products, then re-run; or (b) add the PID + price to `priv/imports/bottle/price_map.yml`.
-- **Inserts vs skips** — first run should show ~0 skips. Re-runs after partial success should show non-zero skips.
 
 If no unknown PIDs, the task prompts `Proceed? [Yn]`. Type `y` to proceed, anything else to abort.
 
@@ -96,7 +95,7 @@ Each run appends a line to `priv/imports/bottle/bottle_import_log.jsonl`. Check 
 tail -1 priv/imports/bottle/bottle_import_log.jsonl | jq
 ```
 
-Confirm `inserted_orders + skipped_orders == total orders in window`, `failed_orders == 0`, and `api_url` shows the expected target.
+The summary and audit log report `inserted_orders`, `skipped_orders`, and `failed_orders`. A first run shows ~0 skips; a re-run shows everything skipped (idempotency). Confirm `inserted_orders + skipped_orders == total orders in window`, `failed_orders == 0`, and `api_url` shows the expected target.
 
 ## Idempotency
 
