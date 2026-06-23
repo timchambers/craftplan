@@ -85,7 +85,9 @@ defmodule Craftplan.Orders.Order do
         :delivery_method,
         :tax_total,
         :shipping_total,
-        :discount_total
+        :discount_total,
+        :payment_status,
+        :paid_at
       ]
 
       argument :items, {:array, :map}
@@ -264,6 +266,7 @@ defmodule Craftplan.Orders.Order do
     # Invoicing / payments / discounts
     attribute :invoice_number, :string do
       allow_nil? true
+      public? true
     end
 
     attribute :invoice_status, :atom do
@@ -306,6 +309,7 @@ defmodule Craftplan.Orders.Order do
     attribute :payment_status, PaymentStatus do
       allow_nil? false
       default :pending
+      public? true
     end
 
     # Monetary totals (persisted)
@@ -336,6 +340,7 @@ defmodule Craftplan.Orders.Order do
 
     attribute :paid_at, :utc_datetime do
       allow_nil? true
+      public? true
     end
 
     timestamps()

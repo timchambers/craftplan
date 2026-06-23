@@ -94,11 +94,20 @@ defmodule Craftplan.Test.Factory do
     actor = Keyword.get(opts, :actor, staff_actor())
     delivery_date = Keyword.get(opts, :delivery_date, DateTime.utc_now())
 
-    params = %{
-      customer_id: customer.id,
-      delivery_date: delivery_date,
-      items: items
-    }
+    params =
+      then(
+        %{
+          customer_id: customer.id,
+          delivery_date: delivery_date,
+          items: items
+        },
+        fn p ->
+          case Keyword.get(opts, :invoice_number) do
+            nil -> p
+            inv -> Map.put(p, :invoice_number, inv)
+          end
+        end
+      )
 
     {:ok, order} =
       Order

@@ -140,6 +140,7 @@ defmodule Craftplan.Catalog.Product do
 
     attribute :sku, :string do
       allow_nil? false
+      public? true
     end
 
     attribute :photos, {:array, :string} do

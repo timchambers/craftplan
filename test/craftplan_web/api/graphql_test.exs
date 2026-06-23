@@ -78,6 +78,47 @@ defmodule CraftplanWeb.Api.GraphqlTest do
       assert get_in(resp, ["data", "getProduct", "name"]) == "GQL Single"
     end
 
+    test "listProducts can filter by sku and return it", %{conn: conn} do
+      {raw_key, _api_key, admin} = create_api_key!(%{"products" => ["read", "create"]})
+      Factory.create_product!(%{name: "SKU Probe", sku: "BOTTLE-PID-TEST1"}, admin)
+
+      query = """
+      query($sku: String!) {
+        listProducts(filter: {sku: {eq: $sku}}) {
+          results { id sku }
+        }
+      }
+      """
+
+      resp = graphql(conn, raw_key, query, %{"sku" => "BOTTLE-PID-TEST1"})
+
+      assert is_nil(resp["errors"])
+      results = get_in(resp, ["data", "listProducts", "results"])
+      assert [%{"sku" => "BOTTLE-PID-TEST1"}] = results
+    end
+
+    test "listOrders can filter by invoiceNumber and read payment fields", %{conn: conn} do
+      {raw_key, _api_key, admin} =
+        create_api_key!(%{"orders" => ["read", "create"], "customers" => ["create"]})
+
+      customer = Factory.create_customer!(%{first_name: "Inv", last_name: "Probe"}, admin)
+      Factory.create_order_with_items!(customer, [], invoice_number: "BOTTLE-INVTEST")
+
+      query = """
+      query($pat: String!) {
+        listOrders(filter: {invoiceNumber: {like: $pat}}) {
+          results { id invoiceNumber paymentStatus paidAt }
+        }
+      }
+      """
+
+      resp = graphql(conn, raw_key, query, %{"pat" => "BOTTLE-%"})
+
+      assert is_nil(resp["errors"])
+      results = get_in(resp, ["data", "listOrders", "results"])
+      assert Enum.any?(results, &(&1["invoiceNumber"] == "BOTTLE-INVTEST"))
+    end
+
     test "key without scope sees empty products list", %{conn: conn} do
       {raw_key, _api_key, admin} =
         create_api_key!(%{"orders" => ["read"]})
@@ -125,6 +166,32 @@ defmodule CraftplanWeb.Api.GraphqlTest do
       assert is_nil(resp["errors"])
       results = get_in(resp, ["data", "listProducts", "results"])
       assert length(results) >= 1
+    end
+  end
+
+  describe "mutations" do
+    test "updateOrder can set paymentStatus and paidAt", %{conn: conn} do
+      {raw_key, _api_key, admin} =
+        create_api_key!(%{"orders" => ["read", "create", "update"], "customers" => ["create"]})
+
+      customer = Factory.create_customer!(%{first_name: "Pay", last_name: "Probe"}, admin)
+      order = Factory.create_order_with_items!(customer, [], invoice_number: "BOTTLE-PAYTEST")
+
+      mutation = """
+      mutation($id: ID!, $paidAt: DateTime!) {
+        updateOrder(id: $id, input: {paymentStatus: PAID, paidAt: $paidAt}) {
+          result { id paymentStatus paidAt }
+          errors { message }
+        }
+      }
+      """
+
+      resp =
+        graphql(conn, raw_key, mutation, %{"id" => order.id, "paidAt" => "2026-01-15T12:00:00Z"})
+
+      assert is_nil(resp["errors"])
+      assert [] == get_in(resp, ["data", "updateOrder", "errors"])
+      assert get_in(resp, ["data", "updateOrder", "result", "paymentStatus"]) == "PAID"
     end
   end
 
