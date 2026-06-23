@@ -159,7 +159,7 @@ defmodule CraftplanWeb.OrderLive.Index do
             </:col>
 
             <:col :let={{_id, order}} label="Delivery date">
-              {format_time(order.delivery_date, @time_zone)}
+              {format_date(order.delivery_date, @time_zone)}
             </:col>
 
             <:col :let={{_id, order}} label="Total cost">
