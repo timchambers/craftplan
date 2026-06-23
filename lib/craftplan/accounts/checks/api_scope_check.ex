@@ -44,9 +44,14 @@ defmodule Craftplan.Accounts.Checks.ApiScopeCheck do
         required_permissions = action_type_to_permissions(action.type)
 
         case Map.get(scopes, resource_key) do
-          nil -> false
-          permissions when is_list(permissions) -> Enum.any?(required_permissions, &(&1 in permissions))
-          _ -> false
+          nil ->
+            false
+
+          permissions when is_list(permissions) ->
+            Enum.any?(required_permissions, &(&1 in permissions))
+
+          _ ->
+            false
         end
     end
   end
