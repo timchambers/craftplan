@@ -98,7 +98,9 @@ defmodule CraftplanWeb.Api.GraphqlTest do
     end
 
     test "listOrders can filter by invoiceNumber and read payment fields", %{conn: conn} do
-      {raw_key, _api_key, admin} = create_api_key!(%{"orders" => ["read", "create"], "customers" => ["create"]})
+      {raw_key, _api_key, admin} =
+        create_api_key!(%{"orders" => ["read", "create"], "customers" => ["create"]})
+
       customer = Factory.create_customer!(%{first_name: "Inv", last_name: "Probe"}, admin)
       Factory.create_order_with_items!(customer, [], invoice_number: "BOTTLE-INVTEST")
 
@@ -169,7 +171,9 @@ defmodule CraftplanWeb.Api.GraphqlTest do
 
   describe "mutations" do
     test "updateOrder can set paymentStatus and paidAt", %{conn: conn} do
-      {raw_key, _api_key, admin} = create_api_key!(%{"orders" => ["read", "create", "update"], "customers" => ["create"]})
+      {raw_key, _api_key, admin} =
+        create_api_key!(%{"orders" => ["read", "create", "update"], "customers" => ["create"]})
+
       customer = Factory.create_customer!(%{first_name: "Pay", last_name: "Probe"}, admin)
       order = Factory.create_order_with_items!(customer, [], invoice_number: "BOTTLE-PAYTEST")
 
@@ -182,7 +186,8 @@ defmodule CraftplanWeb.Api.GraphqlTest do
       }
       """
 
-      resp = graphql(conn, raw_key, mutation, %{"id" => order.id, "paidAt" => "2026-01-15T12:00:00Z"})
+      resp =
+        graphql(conn, raw_key, mutation, %{"id" => order.id, "paidAt" => "2026-01-15T12:00:00Z"})
 
       assert is_nil(resp["errors"])
       assert [] == get_in(resp, ["data", "updateOrder", "errors"])
