@@ -7,4 +7,6 @@ defmodule Craftplan.Orders.Order.Types.PaymentStatus do
       :to_be_refunded,
       :refunded
     ]
+
+  def graphql_type(_), do: :order_payment_status
 end

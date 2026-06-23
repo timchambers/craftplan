@@ -41,19 +41,22 @@ defmodule Craftplan.Accounts.Checks.ApiScopeCheck do
 
       scopes when is_map(scopes) ->
         resource_key = Map.get(@resource_scope_map, resource)
-        required_permission = action_type_to_permission(action.type)
+        required_permissions = action_type_to_permissions(action.type)
 
         case Map.get(scopes, resource_key) do
           nil -> false
-          permissions when is_list(permissions) -> required_permission in permissions
+          permissions when is_list(permissions) -> Enum.any?(required_permissions, &(&1 in permissions))
           _ -> false
         end
     end
   end
 
-  defp action_type_to_permission(:read), do: "read"
-  defp action_type_to_permission(:create), do: "write"
-  defp action_type_to_permission(:update), do: "write"
-  defp action_type_to_permission(:destroy), do: "write"
-  defp action_type_to_permission(_), do: "read"
+  # Returns a list of permission strings that satisfy this action type.
+  # "write" is accepted as a legacy coarse-grained permission for all write types.
+  # Granular strings ("create", "update", "delete") are also accepted.
+  defp action_type_to_permissions(:read), do: ["read"]
+  defp action_type_to_permissions(:create), do: ["write", "create"]
+  defp action_type_to_permissions(:update), do: ["write", "update"]
+  defp action_type_to_permissions(:destroy), do: ["write", "delete"]
+  defp action_type_to_permissions(_), do: ["read"]
 end
