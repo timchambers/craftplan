@@ -181,13 +181,13 @@ defmodule Craftplan.BottleImport.Upserts do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" ")
 
-    %{
+    Jason.encode!(%{
       "street" => blank_to_nil(street),
       "city" => blank_to_nil(row["City"]),
       "state" => blank_to_nil(row["State"]),
       "zip" => blank_to_nil(row["Zip"]),
       "country" => "US"
-    }
+    })
   end
 
   defp to_decimal(%Decimal{} = d), do: d
