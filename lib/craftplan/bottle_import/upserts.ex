@@ -1,146 +1,193 @@
 defmodule Craftplan.BottleImport.Upserts do
   @moduledoc false
 
+  alias Craftplan.BottleImport.ApiClient
   alias Craftplan.BottleImport.NameParser
   alias Craftplan.BottleImport.PhoneNormalizer
+  alias Craftplan.BottleImport.Queries
   alias Craftplan.BottleImport.SlotTimeParser
-  alias Craftplan.Catalog.Product
-  alias Craftplan.CRM.Customer
-  alias Craftplan.Orders.Order
 
-  require Ash.Query
+  @spec resolve_product(String.t(), String.t(), String.t(), map()) ::
+          {:ok, %{id: String.t(), price: Decimal.t()}} | {:error, term()}
+  def resolve_product(pid, name, category, price_map) do
+    sku = "BOTTLE-#{pid}"
 
-  @spec upsert_customer(map(), term()) :: {:ok, Customer.t()} | {:error, term()}
-  def upsert_customer(row, actor) do
+    case ApiClient.query(Queries.list_product_by_sku(), %{"sku" => sku}) do
+      {:ok, %{"listProducts" => %{"results" => [p | _]}}} ->
+        {:ok, %{id: p["id"], price: to_decimal(p["price"])}}
+
+      {:ok, %{"listProducts" => %{"results" => []}}} ->
+        case Map.get(price_map, pid) do
+          nil -> {:error, {:unknown_pid, %{pid: pid, name: name}}}
+          %Decimal{} = price -> create_product(sku, name, category, price)
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp create_product(sku, name, category, price) do
+    availability = if category == "kit", do: "off", else: "available"
+
+    input = %{
+      "sku" => sku,
+      "name" => name,
+      "price" => Decimal.to_string(price),
+      "status" => "active",
+      "sellingAvailability" => availability
+    }
+
+    case ApiClient.mutate(Queries.create_product(), %{"input" => input}, "createProduct") do
+      {:ok, p} -> {:ok, %{id: p["id"], price: to_decimal(p["price"])}}
+      {:error, _} = err -> err
+    end
+  end
+
+  @spec upsert_customer(map()) :: {:ok, %{id: String.t()}} | {:error, term()}
+  def upsert_customer(row) do
     with {:ok, phone} <- PhoneNormalizer.normalize(row["Phone"]) do
       names = NameParser.parse(row["Customer Name"])
-      email = blank_to_nil(row["Email"]) |> resolve_email_conflict(phone, actor)
+      email = row["Email"] |> blank_to_nil() |> resolve_email_conflict(phone)
 
-      attrs = %{
-        type: :individual,
-        first_name: names.first_name,
-        last_name: names.last_name,
-        email: email,
-        phone: phone,
-        shipping_address: build_address(row)
+      input = %{
+        "type" => "individual",
+        "firstName" => names.first_name,
+        "lastName" => names.last_name,
+        "email" => email,
+        "phone" => phone,
+        "shippingAddress" => build_address(row)
       }
 
-      case lookup_customer_by_phone(phone, actor) do
+      case lookup_customer_by_phone(phone) do
         nil ->
-          Customer
-          |> Ash.Changeset.for_create(:create, attrs)
-          |> Ash.create(actor: actor)
+          with {:ok, c} <-
+                 ApiClient.mutate(
+                   Queries.create_customer(),
+                   %{"input" => input},
+                   "createCustomer"
+                 ),
+               do: {:ok, %{id: c["id"]}}
 
-        %Customer{} = existing ->
-          existing
-          |> Ash.Changeset.for_update(:update, Map.drop(attrs, [:type]))
-          |> Ash.update(actor: actor)
+        %{"id" => id} ->
+          update_input = Map.delete(input, "type")
+
+          with {:ok, _} <-
+                 ApiClient.mutate(
+                   Queries.update_customer(),
+                   %{"id" => id, "input" => update_input},
+                   "updateCustomer"
+                 ),
+               do: {:ok, %{id: id}}
       end
     end
   end
 
-  # If `email` is already taken by a customer with a different phone (households
-  # share an email), return nil so we don't collide with the email identity.
-  defp resolve_email_conflict(nil, _phone, _actor), do: nil
+  # Households share an email; if the email is held by a *different* phone, drop it.
+  defp resolve_email_conflict(nil, _phone), do: nil
 
-  defp resolve_email_conflict(email, phone, actor) do
-    Customer
-    |> Ash.Query.filter(email == ^email)
-    |> Ash.read_one(actor: actor)
-    |> case do
-      {:ok, %Customer{phone: ^phone}} -> email
-      {:ok, %Customer{}} -> nil
+  defp resolve_email_conflict(email, phone) do
+    case ApiClient.query(Queries.list_customer_by_email(), %{"email" => email}) do
+      {:ok, %{"listCustomers" => %{"results" => [%{"phone" => ^phone} | _]}}} -> email
+      {:ok, %{"listCustomers" => %{"results" => [_ | _]}}} -> nil
       _ -> email
     end
   end
 
-  @spec resolve_product(String.t(), String.t(), String.t(), map(), term()) ::
-          {:ok, Product.t()} | {:error, {:unknown_pid, map()}}
-  def resolve_product(pid, name, category, price_map, actor) do
-    sku = "BOTTLE-#{pid}"
-
-    case lookup_product_by_sku(sku, actor) do
-      %Product{} = found ->
-        {:ok, found}
-
-      nil ->
-        case Map.get(price_map, pid) do
-          nil ->
-            {:error, {:unknown_pid, %{pid: pid, name: name}}}
-
-          %Decimal{} = price ->
-            create_product(sku, name, category, price, actor)
-        end
+  defp lookup_customer_by_phone(phone) do
+    case ApiClient.query(Queries.list_customer_by_phone(), %{"phone" => phone}) do
+      {:ok, %{"listCustomers" => %{"results" => [c | _]}}} -> c
+      _ -> nil
     end
   end
 
-  @spec upsert_order(map(), [map()], map(), term()) ::
-          {:ok, Order.t()} | {:skip, :already_imported} | {:error, term()}
-  def upsert_order(order_row, items, price_map, actor) do
+  @spec upsert_order(map(), [map()], map(), String.t(), MapSet.t(), MapSet.t()) ::
+          {:ok, :created | :restamped} | {:skip, :already_imported} | {:error, term()}
+  def upsert_order(order_row, items, product_map, customer_id, already_imported, unpaid) do
     invoice_number = "BOTTLE-#{order_row["Bottle ID"]}"
+    paid_at = parse_utc_datetime(order_row["Transaction Date"])
 
-    case lookup_order_by_invoice(invoice_number, actor) do
-      %Order{} ->
+    cond do
+      unpaid_entry = Enum.find(unpaid, &(&1.invoice == invoice_number)) ->
+        restamp(unpaid_entry.id, paid_at)
+
+      MapSet.member?(already_imported, invoice_number) ->
         {:skip, :already_imported}
 
-      nil ->
-        with {:ok, customer} <- upsert_customer(order_row, actor),
-             {:ok, resolved_items} <- resolve_items(items, price_map, actor),
-             {:ok, delivery_date} <-
-               SlotTimeParser.parse(
-                 parse_date(order_row["Fulfillment Slot Day"]),
-                 order_row["Fulfillment Slot Time"]
-               ) do
-          item_params =
-            Enum.map(resolved_items, fn {product, qty} ->
-              %{product_id: product.id, quantity: qty, unit_price: product.price}
-            end)
-
-          attrs = %{
-            customer_id: customer.id,
-            delivery_date: delivery_date,
-            delivery_method: map_delivery_method(order_row["Fulfillment Method"]),
-            invoice_number: invoice_number,
-            status: :completed,
-            payment_method: :card,
-            items: item_params
-          }
-
-          # Create the order with items via the managed :items relationship.
-          # payment_status and paid_at are not in the :create accept list, so we
-          # patch them via force_change_attribute on a follow-up :update call.
-          with {:ok, order} <-
-                 Order
-                 |> Ash.Changeset.for_create(:create, attrs)
-                 |> Ash.create(actor: actor) do
-            order
-            |> Ash.Changeset.for_update(:update, %{})
-            |> Ash.Changeset.force_change_attribute(:payment_status, :paid)
-            |> Ash.Changeset.force_change_attribute(
-              :paid_at,
-              parse_utc_datetime(order_row["Transaction Date"])
-            )
-            |> Ash.update(actor: actor)
-          end
-        end
+      true ->
+        create_and_stamp(order_row, items, product_map, customer_id, invoice_number, paid_at)
     end
   end
 
-  # ---------- private helpers ----------
-
-  defp resolve_items(items, price_map, actor) do
-    Enum.reduce_while(items, {:ok, []}, fn item, {:ok, acc} ->
-      case resolve_product(
-             item["pid"],
-             item["product_name"] || "",
-             "manufactured",
-             price_map,
-             actor
+  defp create_and_stamp(order_row, items, product_map, customer_id, invoice_number, paid_at) do
+    with {:ok, item_inputs} <- build_items(items, product_map),
+         {:ok, delivery_date} <-
+           SlotTimeParser.parse(
+             parse_date(order_row["Fulfillment Slot Day"]),
+             order_row["Fulfillment Slot Time"]
            ) do
-        {:ok, product} -> {:cont, {:ok, acc ++ [{product, to_decimal(item["quantity"])}]}}
-        {:error, _} = err -> {:halt, err}
+      input = %{
+        "customerId" => customer_id,
+        "deliveryDate" => DateTime.to_iso8601(delivery_date),
+        "deliveryMethod" => map_delivery_method(order_row["Fulfillment Method"]),
+        "invoiceNumber" => invoice_number,
+        "status" => "completed",
+        "paymentMethod" => "card",
+        "items" => item_inputs
+      }
+
+      with {:ok, order} <-
+             ApiClient.mutate(Queries.create_order(), %{"input" => input}, "createOrder"),
+           {:ok, :restamped} <- restamp(order["id"], paid_at) do
+        {:ok, :created}
+      end
+    end
+  end
+
+  defp restamp(order_id, paid_at) do
+    vars = %{"id" => order_id, "paidAt" => paid_at && DateTime.to_iso8601(paid_at)}
+
+    case ApiClient.mutate(Queries.update_order_paid(), vars, "updateOrder") do
+      {:ok, _} -> {:ok, :restamped}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp build_items(items, product_map) do
+    Enum.reduce_while(items, {:ok, []}, fn item, {:ok, acc} ->
+      pid = item["pid"]
+
+      case Map.get(product_map, pid) do
+        %{id: id, price: price} ->
+          input = %{
+            "productId" => id,
+            "quantity" => to_string(item["quantity"]),
+            "unitPrice" => Decimal.to_string(price)
+          }
+
+          {:cont, {:ok, acc ++ [input]}}
+
+        nil ->
+          {:halt, {:error, {:unknown_pid, %{pid: pid}}}}
       end
     end)
+  end
+
+  # ---- helpers (carried over from the Repo version) ----
+
+  defp build_address(row) do
+    street =
+      [blank_to_nil(row["Address1"]), blank_to_nil(row["Address2"])]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+
+    Jason.encode!(%{
+      "street" => blank_to_nil(street),
+      "city" => blank_to_nil(row["City"]),
+      "state" => blank_to_nil(row["State"]),
+      "zip" => blank_to_nil(row["Zip"]),
+      "country" => "US"
+    })
   end
 
   defp to_decimal(%Decimal{} = d), do: d
@@ -148,73 +195,13 @@ defmodule Craftplan.BottleImport.Upserts do
   defp to_decimal(n) when is_float(n), do: Decimal.from_float(n)
   defp to_decimal(s) when is_binary(s), do: Decimal.new(s)
 
-  defp lookup_customer_by_phone(phone, actor) do
-    Customer
-    |> Ash.Query.filter(phone == ^phone)
-    |> Ash.read_one(actor: actor)
-    |> case do
-      {:ok, c} -> c
-      _ -> nil
-    end
-  end
-
-  defp lookup_product_by_sku(sku, actor) do
-    Product
-    |> Ash.Query.filter(sku == ^sku)
-    |> Ash.read_one(actor: actor)
-    |> case do
-      {:ok, p} -> p
-      _ -> nil
-    end
-  end
-
-  defp lookup_order_by_invoice(invoice_number, actor) do
-    Order
-    |> Ash.Query.filter(invoice_number == ^invoice_number)
-    |> Ash.read_one(actor: actor)
-    |> case do
-      {:ok, o} -> o
-      _ -> nil
-    end
-  end
-
-  defp create_product(sku, name, category, price, actor) do
-    availability = if category == "kit", do: :off, else: :available
-
-    Product
-    |> Ash.Changeset.for_create(:create, %{
-      name: name,
-      sku: sku,
-      price: price,
-      status: :active,
-      selling_availability: availability
-    })
-    |> Ash.create(actor: actor)
-  end
-
-  # Address is stored as an embedded resource — Ash accepts a plain map.
-  defp build_address(row) do
-    street =
-      [blank_to_nil(row["Address1"]), blank_to_nil(row["Address2"])]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(" ")
-
-    %{
-      street: blank_to_nil(street),
-      city: blank_to_nil(row["City"]),
-      state: blank_to_nil(row["State"]),
-      zip: blank_to_nil(row["Zip"]),
-      country: "US"
-    }
-  end
-
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(s) when is_binary(s), do: if(String.trim(s) == "", do: nil, else: s)
   defp blank_to_nil(other), do: other
 
-  defp map_delivery_method("Maketto Pickup"), do: :pickup
-  defp map_delivery_method(_), do: :delivery
+  defp map_delivery_method("Maketto Pickup"), do: "pickup"
+  defp map_delivery_method(_), do: "delivery"
 
   defp parse_date(%Date{} = d), do: d
   defp parse_date(%NaiveDateTime{} = ndt), do: NaiveDateTime.to_date(ndt)

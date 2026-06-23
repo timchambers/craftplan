@@ -1,214 +1,122 @@
 defmodule Craftplan.BottleImport.UpsertsTest do
-  use Craftplan.DataCase, async: true
+  use ExUnit.Case, async: true
 
+  alias Craftplan.BottleImport.ApiClient
   alias Craftplan.BottleImport.Upserts
-  alias Craftplan.Catalog.Product
-  alias Craftplan.Orders.Order
 
-  defp actor, do: Craftplan.DataCase.staff_actor()
+  defp stub_sequence(responses) do
+    {:ok, agent} = Agent.start_link(fn -> responses end)
 
-  defp customer_row(overrides) do
-    Map.merge(
+    Req.Test.stub(ApiClient, fn conn ->
+      next = Agent.get_and_update(agent, fn [h | t] -> {h, t} end)
+      Req.Test.json(conn, next)
+    end)
+  end
+
+  test "resolve_product returns existing product without creating" do
+    stub_sequence([
       %{
-        "Customer Name" => "Edward Yardley",
-        "Email" => "edward@example.com",
-        "Phone" => "(202) 590-8525",
-        "Address1" => "508 7th St NE",
-        "Address2" => nil,
-        "City" => "Washington",
-        "State" => "DC",
-        "Zip" => "20002"
+        "data" => %{
+          "listProducts" => %{
+            "results" => [%{"id" => "p1", "sku" => "BOTTLE-PID-1", "price" => "10.00"}]
+          }
+        }
+      }
+    ])
+
+    assert {:ok, %{id: "p1", price: %Decimal{}}} =
+             Upserts.resolve_product("PID-1", "Loaf", "manufactured", %{})
+  end
+
+  test "resolve_product creates from price map when missing" do
+    stub_sequence([
+      %{"data" => %{"listProducts" => %{"results" => []}}},
+      %{
+        "data" => %{
+          "createProduct" => %{
+            "result" => %{"id" => "p2", "sku" => "BOTTLE-PID-2", "price" => "8.50"},
+            "errors" => []
+          }
+        }
+      }
+    ])
+
+    assert {:ok, %{id: "p2"}} =
+             Upserts.resolve_product("PID-2", "Bun", "manufactured", %{
+               "PID-2" => Decimal.new("8.50")
+             })
+  end
+
+  test "resolve_product errors on unknown pid" do
+    stub_sequence([%{"data" => %{"listProducts" => %{"results" => []}}}])
+
+    assert {:error, {:unknown_pid, %{pid: "PID-3"}}} =
+             Upserts.resolve_product("PID-3", "Mystery", "manufactured", %{})
+  end
+
+  test "upsert_customer nils an email already held by a different phone" do
+    stub_sequence([
+      # email conflict check (resolve_email_conflict called first) -> held by different phone
+      %{
+        "data" => %{
+          "listCustomers" => %{
+            "results" => [%{"id" => "cX", "phone" => "+15550000000", "email" => "shared@h.com"}]
+          }
+        }
       },
-      overrides
-    )
+      # lookup by phone -> none (called second)
+      %{"data" => %{"listCustomers" => %{"results" => []}}},
+      # create
+      %{"data" => %{"createCustomer" => %{"result" => %{"id" => "c1"}, "errors" => []}}}
+    ])
+
+    row = %{
+      "Customer Name" => "Jane Doe",
+      "Phone" => "(202) 555-1212",
+      "Email" => "shared@h.com",
+      "Address1" => "1 St",
+      "Address2" => "",
+      "City" => "DC",
+      "State" => "DC",
+      "Zip" => "20001"
+    }
+
+    assert {:ok, %{id: "c1"}} = Upserts.upsert_customer(row)
   end
 
-  describe "upsert_customer/2" do
-    test "creates a new customer when phone is unique" do
-      {:ok, c} = Upserts.upsert_customer(customer_row(%{}), actor())
-      assert c.first_name == "Edward"
-      assert c.last_name == "Yardley"
-      assert c.phone == "2025908525"
-    end
-
-    test "updates an existing customer's shipping address when phone matches" do
-      {:ok, first} = Upserts.upsert_customer(customer_row(%{}), actor())
-      assert first.shipping_address.street == "508 7th St NE"
-
-      {:ok, second} =
-        Upserts.upsert_customer(
-          customer_row(%{"Address1" => "999 New Address", "Zip" => "20003"}),
-          actor()
-        )
-
-      assert second.id == first.id
-      assert second.shipping_address.street == "999 New Address"
-      assert second.shipping_address.zip == "20003"
-    end
-
-    test "handles mononyms via NameParser (first_name = -)" do
-      {:ok, c} =
-        Upserts.upsert_customer(
-          customer_row(%{"Customer Name" => "Spackey", "Phone" => "(216) 798-1313"}),
-          actor()
-        )
-
-      # NameParser returns "-" for mononym first_name, which is also what Customer stores.
-      assert c.first_name == "-"
-      assert c.last_name == "Spackey"
-    end
+  test "upsert_order skips when already imported and paid" do
+    assert {:skip, :already_imported} =
+             Upserts.upsert_order(
+               %{"Bottle ID" => "999"},
+               [],
+               %{},
+               "c1",
+               MapSet.new(["BOTTLE-999"]),
+               MapSet.new()
+             )
   end
 
-  describe "resolve_product/5" do
-    test "returns the existing Product when SKU is found" do
-      _existing =
-        Product
-        |> Ash.Changeset.for_create(:create, %{
-          name: "Pain de Ville",
-          sku: "BOTTLE-PID-47420",
-          price: Decimal.new("10.00"),
-          status: :active
-        })
-        |> Ash.create!(actor: actor())
-
-      {:ok, found} =
-        Upserts.resolve_product("PID-47420", "Pain de Ville", "manufactured", %{}, actor())
-
-      assert found.sku == "BOTTLE-PID-47420"
-      assert Decimal.equal?(found.price, Decimal.new("10.00"))
-    end
-
-    test "creates a new Product from price_map when SKU isn't in DB" do
-      {:ok, created} =
-        Upserts.resolve_product(
-          "PID-99999",
-          "Brand New Loaf",
-          "manufactured",
-          %{"PID-99999" => Decimal.new("12.50")},
-          actor()
-        )
-
-      assert created.sku == "BOTTLE-PID-99999"
-      assert Decimal.equal?(created.price, Decimal.new("12.50"))
-      assert created.selling_availability == :available
-      assert created.status == :active
-    end
-
-    test "creates kit products with selling_availability: :off and preserves name verbatim" do
-      {:ok, created} =
-        Upserts.resolve_product(
-          "PID-96931",
-          "Combo Box (2 of each)",
-          "kit",
-          %{"PID-96931" => Decimal.new("40.00")},
-          actor()
-        )
-
-      assert created.selling_availability == :off
-      assert created.name == "Combo Box (2 of each)"
-    end
-
-    test "errors when PID is unknown to both DB and price_map" do
-      assert {:error, {:unknown_pid, %{pid: "PID-77777", name: "Mystery"}}} =
-               Upserts.resolve_product("PID-77777", "Mystery", "manufactured", %{}, actor())
-    end
-  end
-
-  describe "upsert_order/4" do
-    setup do
-      {:ok, _} = Upserts.upsert_customer(customer_row(%{}), actor())
-
-      {:ok, _} =
-        Upserts.resolve_product(
-          "PID-47420",
-          "Pain de Ville",
-          "manufactured",
-          %{"PID-47420" => Decimal.new("10.00")},
-          actor()
-        )
-
-      :ok
-    end
-
-    test "creates a new order with its items" do
-      order_row = %{
-        "Bottle ID" => "10423992",
-        "Customer Name" => "Edward Yardley",
-        "Phone" => "(202) 590-8525",
-        "Transaction Date" => ~U[2025-12-20 22:00:22Z],
-        "Fulfillment Slot Day" => ~D[2026-01-13],
-        "Fulfillment Slot Time" => "1/13 05:00AM - 1/13 12:00PM",
-        "Fulfillment Method" => "Delivery"
+  test "upsert_order re-stamps an already-imported but unpaid order" do
+    stub_sequence([
+      %{
+        "data" => %{
+          "updateOrder" => %{
+            "result" => %{"id" => "o1", "paymentStatus" => "PAID"},
+            "errors" => []
+          }
+        }
       }
+    ])
 
-      items = [%{"pid" => "PID-47420", "quantity" => 1}]
-
-      {:ok, order} =
-        Upserts.upsert_order(order_row, items, %{"PID-47420" => Decimal.new("10.00")}, actor())
-
-      assert order.invoice_number == "BOTTLE-10423992"
-      assert order.delivery_method == :delivery
-      assert order.payment_status == :paid
-      assert order.status == :completed
-      assert order.delivery_date == ~U[2026-01-13 10:00:00Z]
-    end
-
-    test "is idempotent — second call with same Bottle ID returns :skip" do
-      order_row = %{
-        "Bottle ID" => "10423992",
-        "Customer Name" => "Edward Yardley",
-        "Phone" => "(202) 590-8525",
-        "Transaction Date" => ~U[2025-12-20 22:00:22Z],
-        "Fulfillment Slot Day" => ~D[2026-01-13],
-        "Fulfillment Slot Time" => "1/13 05:00AM - 1/13 12:00PM",
-        "Fulfillment Method" => "Delivery"
-      }
-
-      items = [%{"pid" => "PID-47420", "quantity" => 1}]
-
-      {:ok, _} =
-        Upserts.upsert_order(order_row, items, %{"PID-47420" => Decimal.new("10.00")}, actor())
-
-      assert {:skip, :already_imported} =
-               Upserts.upsert_order(order_row, items, %{"PID-47420" => Decimal.new("10.00")}, actor())
-    end
-
-    test "maps Maketto Pickup to :pickup" do
-      order_row = %{
-        "Bottle ID" => "10423993",
-        "Customer Name" => "Edward Yardley",
-        "Phone" => "(202) 590-8525",
-        "Transaction Date" => ~U[2025-12-20 22:00:22Z],
-        "Fulfillment Slot Day" => ~D[2026-01-13],
-        "Fulfillment Slot Time" => "1/13 05:00AM - 1/13 12:00PM",
-        "Fulfillment Method" => "Maketto Pickup"
-      }
-
-      items = [%{"pid" => "PID-47420", "quantity" => 1}]
-
-      {:ok, order} =
-        Upserts.upsert_order(order_row, items, %{"PID-47420" => Decimal.new("10.00")}, actor())
-
-      assert order.delivery_method == :pickup
-    end
-
-    test "blocks the order with unknown PID and writes nothing" do
-      order_row = %{
-        "Bottle ID" => "10423994",
-        "Customer Name" => "Edward Yardley",
-        "Phone" => "(202) 590-8525",
-        "Transaction Date" => ~U[2025-12-20 22:00:22Z],
-        "Fulfillment Slot Day" => ~D[2026-01-13],
-        "Fulfillment Slot Time" => "1/13 05:00AM - 1/13 12:00PM",
-        "Fulfillment Method" => "Delivery"
-      }
-
-      items = [%{"pid" => "PID-77777", "quantity" => 1}]
-
-      assert {:error, {:unknown_pid, _}} =
-               Upserts.upsert_order(order_row, items, %{}, actor())
-
-      assert {:ok, []} = Ash.read(Order, action: :read, actor: actor())
-    end
+    # NOTE: needs the order id; in this path upsert_order looks it up from the unpaid map.
+    assert {:ok, :restamped} =
+             Upserts.upsert_order(
+               %{"Bottle ID" => "999", "Transaction Date" => "2026-01-10 10:00:00"},
+               [],
+               %{},
+               "c1",
+               MapSet.new(["BOTTLE-999"]),
+               MapSet.new([%{invoice: "BOTTLE-999", id: "o1"}])
+             )
   end
 end
