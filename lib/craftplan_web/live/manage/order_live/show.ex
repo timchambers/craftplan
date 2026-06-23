@@ -91,11 +91,11 @@ defmodule CraftplanWeb.OrderLive.Show do
           </:item>
 
           <:item title="Delivery Date">
-            {format_time(@order.delivery_date, @time_zone)}
+            <.datetime value={@order.delivery_date} time_zone={@time_zone} />
           </:item>
 
           <:item title="Created At">
-            {format_time(@order.inserted_at, @time_zone)}
+            <.datetime value={@order.inserted_at} time_zone={@time_zone} />
           </:item>
         </.list>
       </.tabs_content>

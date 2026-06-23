@@ -34,8 +34,12 @@ defmodule CraftplanWeb.PurchasingLive.Index do
         </:col>
         <:col :let={po} label="Supplier">{po.supplier.name}</:col>
         <:col :let={po} label="Status">{po.status}</:col>
-        <:col :let={po} label="Ordered">{format_date(po.ordered_at, @time_zone)}</:col>
-        <:col :let={po} label="Received">{format_date(po.received_at, @time_zone)}</:col>
+        <:col :let={po} label="Ordered">
+          <.datetime value={po.ordered_at} time_zone={@time_zone} />
+        </:col>
+        <:col :let={po} label="Received">
+          <.datetime value={po.received_at} time_zone={@time_zone} />
+        </:col>
 
         <:action :let={po}>
           <.link :if={po.status != :received} phx-click={JS.push("receive", value: %{id: po.id})}>

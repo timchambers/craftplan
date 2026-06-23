@@ -80,5 +80,20 @@ defmodule CraftplanWeb.ManageOrdersLiveTest do
       {:ok, view, _html} = live(conn, ~p"/manage/orders/#{order.reference}/invoice")
       assert has_element?(view, "#invoice-items")
     end
+
+    @tag role: :staff
+    test "order show renders delivery date as a <time> element", %{conn: conn} do
+      product = Factory.create_product!()
+      customer = Factory.create_customer!()
+
+      order =
+        Factory.create_order_with_items!(customer, [
+          %{product_id: product.id, quantity: 2, unit_price: product.price}
+        ])
+
+      {:ok, _view, html} = live(conn, ~p"/manage/orders/#{order.reference}")
+      assert html =~ "<time"
+      assert html =~ ~s(datetime=)
+    end
   end
 end

@@ -44,6 +44,49 @@ defmodule CraftplanWeb.Components.Core do
   end
 
   @doc """
+  Renders a date/time value as a semantic `<time>` element.
+
+    * Visible text is a human date (`:date`, default) or date + time (`:datetime`) — never a bare time.
+    * `datetime` attribute is the canonical ISO 8601 instant (machine-readable).
+    * `title` attribute is the full localized date + time (browser tooltip on hover).
+
+  ## Examples
+
+      <.datetime value={@order.delivery_date} time_zone={@time_zone} />
+      <.datetime value={@batch.completed_at} time_zone={@time_zone} precision={:datetime} />
+  """
+  attr :value, :any,
+    required: true,
+    doc: "Date, NaiveDateTime, or DateTime (nil renders the empty placeholder)"
+
+  attr :time_zone, :string, default: nil, doc: "IANA timezone; pass @time_zone"
+  attr :precision, :atom, default: :date, values: [:date, :datetime]
+  attr :class, :string, default: nil
+  attr :empty, :string, default: "—"
+
+  def datetime(%{value: nil} = assigns) do
+    ~H"""
+    <span class={@class}>{@empty}</span>
+    """
+  end
+
+  def datetime(assigns) do
+    assigns =
+      assigns
+      |> assign(:machine, datetime_attr(assigns.value, assigns.time_zone))
+      |> assign(:full, format_datetime(assigns.value, assigns.time_zone))
+      |> assign(:label, datetime_label(assigns.value, assigns.precision, assigns.time_zone))
+
+    ~H"""
+    <time datetime={@machine} title={@full} class={@class}>{@label}</time>
+    """
+  end
+
+  defp datetime_label(value, :datetime, tz), do: format_datetime(value, tz)
+
+  defp datetime_label(value, _precision, tz), do: format_date_only(value, tz)
+
+  @doc """
   Renders a modal.
 
   ## Examples

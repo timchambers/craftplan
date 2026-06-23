@@ -4,6 +4,7 @@ defmodule CraftplanWeb.ManageCustomersLiveTest do
   import Phoenix.LiveViewTest
 
   alias Craftplan.CRM.Customer
+  alias Craftplan.Test.Factory
 
   defp create_customer!(attrs \\ %{}) do
     first = Map.get(attrs, :first_name, "Ada")
@@ -91,6 +92,19 @@ defmodule CraftplanWeb.ManageCustomersLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/manage/customers/#{c.reference}/edit")
       assert has_element?(view, "#customer-modal")
+    end
+
+    @tag role: :staff
+    test "customer order-history tab renders dates as <time> elements", %{conn: conn} do
+      c = create_customer!()
+      product = Factory.create_product!()
+
+      Factory.create_order_with_items!(c, [
+        %{product_id: product.id, quantity: 1, unit_price: product.price}
+      ])
+
+      {:ok, _view, html} = live(conn, ~p"/manage/customers/#{c.reference}/orders")
+      assert html =~ "<time"
     end
   end
 end

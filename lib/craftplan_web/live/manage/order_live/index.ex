@@ -159,7 +159,7 @@ defmodule CraftplanWeb.OrderLive.Index do
             </:col>
 
             <:col :let={{_id, order}} label="Delivery date">
-              {format_time(order.delivery_date, @time_zone)}
+              <.datetime value={order.delivery_date} time_zone={@time_zone} />
             </:col>
 
             <:col :let={{_id, order}} label="Total cost">
@@ -368,8 +368,12 @@ defmodule CraftplanWeb.OrderLive.Index do
               {@selected_order.customer.full_name}
             </:item>
 
-            <:item title="Delivery time">
-              {format_time(@selected_order.delivery_date, @time_zone)}
+            <:item title="Delivery">
+              <.datetime
+                value={@selected_order.delivery_date}
+                time_zone={@time_zone}
+                precision={:datetime}
+              />
             </:item>
 
             <:item title="Status">

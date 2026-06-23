@@ -146,7 +146,7 @@ defmodule CraftplanWeb.ProductionBatchLive.Index do
               {if batch.status == :completed, do: Decimal.to_string(batch.produced_qty), else: "—"}
             </:col>
             <:col :let={batch} label="Created">
-              {format_time(batch.inserted_at, @time_zone)}
+              <.datetime value={batch.inserted_at} time_zone={@time_zone} />
             </:col>
             <:action :let={batch}>
               <.link navigate={~p"/manage/production/batches/#{batch.batch_code}"}>
