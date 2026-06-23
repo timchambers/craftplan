@@ -158,6 +158,39 @@ defmodule CraftplanWeb.HtmlHelpers do
 
   def format_time(_value, _opts), do: ""
 
+  @doc """
+  Canonical ISO 8601 string for a `<time datetime=…>` attribute. Dates render
+  as `YYYY-MM-DD`; datetimes render as UTC (`…Z`). Returns "" for nil.
+  """
+  @spec datetime_attr(datetime_input | nil, String.t() | nil) :: String.t()
+  def datetime_attr(nil, _tz), do: ""
+  def datetime_attr(%Date{} = date, _tz), do: Date.to_iso8601(date)
+
+  def datetime_attr(%NaiveDateTime{} = naive, _tz) do
+    naive |> DateTime.from_naive!("Etc/UTC") |> DateTime.to_iso8601()
+  end
+
+  def datetime_attr(%DateTime{} = datetime, _tz) do
+    datetime |> DateTime.shift_zone!("Etc/UTC") |> DateTime.to_iso8601()
+  end
+
+  @doc """
+  Full, human-readable localized date + time for a `title` tooltip. Dates show
+  the long date only; datetimes show long date + 12h time shifted to `tz`.
+  Returns "" for nil.
+  """
+  @spec format_datetime(datetime_input | nil, String.t() | nil) :: String.t()
+  def format_datetime(nil, _tz), do: ""
+  def format_datetime(%Date{} = date, _tz), do: format_date(date, format: :long)
+
+  def format_datetime(value, tz) do
+    shifted = normalize_datetime(value, tz)
+    date_only = extract_date(shifted)
+    date_part = format_date(date_only, format: :long)
+    time_part = shifted |> format_time(format: :time12) |> String.replace(~r/^0(\d)/, "\\1")
+    date_part <> " at " <> time_part
+  end
+
   defp do_format_time(nil, _format), do: ""
   defp do_format_time(%Date{} = date, format), do: Calendar.strftime(date, time_pattern(format))
 
@@ -595,6 +628,11 @@ defmodule CraftplanWeb.HtmlHelpers do
   def emoji_for_payment("refunded"), do: "🔄"
   def emoji_for_payment(:refunded), do: "🔄"
   def emoji_for_payment(_), do: "❓"
+
+  defp extract_date(%Date{} = date), do: date
+  defp extract_date(%NaiveDateTime{} = naive), do: NaiveDateTime.to_date(naive)
+  defp extract_date(%DateTime{} = datetime), do: DateTime.to_date(datetime)
+  defp extract_date(_), do: nil
 
   defp normalize_datetime(nil, _timezone), do: nil
 
