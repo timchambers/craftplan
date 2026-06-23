@@ -11,12 +11,13 @@ defmodule CraftplanWeb.DatetimeComponentTest do
 
     assert html =~ ~s(<time)
     assert html =~ ~s(datetime="2026-01-13T05:00:00Z")
-    assert html =~ "Jan 13, 2026"
+    # visible node must be exactly the date, no trailing time
+    assert html =~ ">Jan 13, 2026<"
     # title carries the full localized date + time
     assert html =~ ~s(title=")
     assert html =~ "at"
-    # date-only visible text must NOT contain a bare clock time
-    refute html =~ ~r/>\s*\d{1,2}:\d{2}/
+    # no clock time anywhere in a visible text node
+    refute Regex.run(~r/>[^<]*\d{1,2}:\d{2}[^<]*</, html)
   end
 
   test "precision :datetime shows date and time in the visible text" do

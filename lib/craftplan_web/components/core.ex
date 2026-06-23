@@ -84,7 +84,7 @@ defmodule CraftplanWeb.Components.Core do
 
   defp datetime_label(value, :datetime, tz), do: format_datetime(value, tz)
 
-  defp datetime_label(value, _precision, tz), do: format_date(value, format: :medium, timezone: tz)
+  defp datetime_label(value, _precision, tz), do: format_date_only(value, tz)
 
   @doc """
   Renders a modal.

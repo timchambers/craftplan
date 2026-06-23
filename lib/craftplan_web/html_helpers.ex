@@ -175,6 +175,17 @@ defmodule CraftplanWeb.HtmlHelpers do
   end
 
   @doc """
+  Date-only medium string ("Jan 13, 2026"), timezone-correct for datetime
+  inputs (shifts to `tz` then drops the time). Returns "" for nil.
+  """
+  @spec format_date_only(datetime_input | nil, String.t() | nil) :: String.t()
+  def format_date_only(nil, _tz), do: ""
+
+  def format_date_only(value, tz) do
+    value |> normalize_datetime(tz) |> extract_date() |> format_date(format: :medium)
+  end
+
+  @doc """
   Full, human-readable localized date + time for a `title` tooltip. Dates show
   the long date only; datetimes show long date + 12h time shifted to `tz`.
   Returns "" for nil.

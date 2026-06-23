@@ -37,4 +37,21 @@ defmodule CraftplanWeb.HtmlHelpersDatetimeTest do
       assert format_datetime(nil, nil) == ""
     end
   end
+
+  describe "format_date_only/2" do
+    test "DateTime at midnight UTC renders date-only, no clock time" do
+      dt = DateTime.new!(~D[2026-01-13], ~T[14:30:00], "Etc/UTC")
+      result = format_date_only(dt, "Etc/UTC")
+      assert result == "Jan 13, 2026"
+      refute result =~ ~r/\d{1,2}:\d{2}/
+    end
+
+    test "Date value renders medium date string" do
+      assert format_date_only(~D[2026-01-13], nil) == "Jan 13, 2026"
+    end
+
+    test "nil renders empty string" do
+      assert format_date_only(nil, nil) == ""
+    end
+  end
 end
