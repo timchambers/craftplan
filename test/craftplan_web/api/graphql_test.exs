@@ -78,6 +78,25 @@ defmodule CraftplanWeb.Api.GraphqlTest do
       assert get_in(resp, ["data", "getProduct", "name"]) == "GQL Single"
     end
 
+    test "listProducts can filter by sku and return it", %{conn: conn} do
+      {raw_key, _api_key, admin} = create_api_key!(%{"products" => ["read", "create"]})
+      Factory.create_product!(%{name: "SKU Probe", sku: "BOTTLE-PID-TEST1"}, admin)
+
+      query = """
+      query($sku: String!) {
+        listProducts(filter: {sku: {eq: $sku}}) {
+          results { id sku }
+        }
+      }
+      """
+
+      resp = graphql(conn, raw_key, query, %{"sku" => "BOTTLE-PID-TEST1"})
+
+      assert is_nil(resp["errors"])
+      results = get_in(resp, ["data", "listProducts", "results"])
+      assert [%{"sku" => "BOTTLE-PID-TEST1"}] = results
+    end
+
     test "key without scope sees empty products list", %{conn: conn} do
       {raw_key, _api_key, admin} =
         create_api_key!(%{"orders" => ["read"]})
