@@ -167,6 +167,29 @@ defmodule CraftplanWeb.Api.GraphqlTest do
     end
   end
 
+  describe "mutations" do
+    test "updateOrder can set paymentStatus and paidAt", %{conn: conn} do
+      {raw_key, _api_key, admin} = create_api_key!(%{"orders" => ["read", "create", "update"], "customers" => ["create"]})
+      customer = Factory.create_customer!(%{first_name: "Pay", last_name: "Probe"}, admin)
+      order = Factory.create_order_with_items!(customer, [], invoice_number: "BOTTLE-PAYTEST")
+
+      mutation = """
+      mutation($id: ID!, $paidAt: DateTime!) {
+        updateOrder(id: $id, input: {paymentStatus: PAID, paidAt: $paidAt}) {
+          result { id paymentStatus paidAt }
+          errors { message }
+        }
+      }
+      """
+
+      resp = graphql(conn, raw_key, mutation, %{"id" => order.id, "paidAt" => "2026-01-15T12:00:00Z"})
+
+      assert is_nil(resp["errors"])
+      assert [] == get_in(resp, ["data", "updateOrder", "errors"])
+      assert get_in(resp, ["data", "updateOrder", "result", "paymentStatus"]) == "PAID"
+    end
+  end
+
   describe "authentication" do
     test "unauthenticated request can see public products", %{conn: conn} do
       # Products with selling_availability != :off are publicly readable

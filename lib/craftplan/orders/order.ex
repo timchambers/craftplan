@@ -85,7 +85,9 @@ defmodule Craftplan.Orders.Order do
         :delivery_method,
         :tax_total,
         :shipping_total,
-        :discount_total
+        :discount_total,
+        :payment_status,
+        :paid_at
       ]
 
       argument :items, {:array, :map}
