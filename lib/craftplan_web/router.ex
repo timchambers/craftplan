@@ -183,7 +183,7 @@ defmodule CraftplanWeb.Router do
       live "/manage/customers/:reference/details", CustomerLive.Show, :details
       live "/manage/customers/:reference/orders", CustomerLive.Show, :orders
       live "/manage/customers/:reference/statistics", CustomerLive.Show, :statistics
-      live "/manage/customers/:reference/edit", CustomerLive.Index, :edit
+      live "/manage/customers/:reference/edit", CustomerLive.Show, :edit
 
       # Production
       live "/manage/overview", OverviewLive, :index
