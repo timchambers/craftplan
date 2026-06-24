@@ -94,6 +94,7 @@ defmodule Craftplan.Inventory.Material do
 
       argument :material_nutritional_facts, {:array, :map}
 
+      change Craftplan.Inventory.Changes.ValidateMaterialNutrition
       change manage_relationship(:material_nutritional_facts, type: :direct_control)
     end
 
@@ -159,7 +160,7 @@ defmodule Craftplan.Inventory.Material do
 
       constraints min_length: 2,
                   max_length: 255,
-                  match: ~r/^[\p{L}\p{N}\w\s\-\.・（）「」]+$/u
+                  match: ~r/^[\p{L}\p{N}\w\s\-\.&・（）「」]+$/u
     end
 
     attribute :sku, :string do
