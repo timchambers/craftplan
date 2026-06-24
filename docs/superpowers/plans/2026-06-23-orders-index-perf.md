@@ -501,26 +501,51 @@ end
 
 Apply the same 3-arity change in `prev_week` (uses `Date.add(..., -7)`) and `today` (uses `calculate_days_range()`). Also update `handle_event("apply_filters", ...)`, `"reset_filters"`, and `"update_date_filters"` to pass `socket.assigns.days_range` to `load_orders_for_calendar/3`.
 
-- [ ] **Step 6: Guard handle_info for the saved-order case**
+- [ ] **Step 6: Make handle_info view-aware on saved order (fixes stale pagination counts)**
 
-The `handle_info({CraftplanWeb.OrderLive.FormComponent, {:saved, order}}, socket)` handler prepends to `socket.assigns.orders`. Keep it, but recompute calendar events from the (possibly empty in table mode) `@orders` and stream-insert into the table:
+The old `handle_info({CraftplanWeb.OrderLive.FormComponent, {:saved, order}}, socket)` did `stream_insert` without refreshing the page counts, so the "Showing X-Y of N" label went stale after creating an order. Now that we have `load_view_data/3`, reload the **active view's** data on save — this refreshes the paginated counts (table) or the week's orders (calendar) and keeps the two views consistent. Replace the whole handler with:
 
 ```elixir
 @impl true
-def handle_info({CraftplanWeb.OrderLive.FormComponent, {:saved, order}}, socket) do
-  order =
-    Ash.load!(order, [:items, :total_cost, customer: [:full_name]],
-      actor: socket.assigns[:current_user]
-    )
-
-  orders = [order | socket.assigns.orders]
-
-  {:noreply,
-   socket
-   |> stream_insert(:orders, order, at: 0)
-   |> assign(:orders, orders)
-   |> assign(:calendar_events, create_calendar_events(orders, @calendar_event_duration))}
+def handle_info({CraftplanWeb.OrderLive.FormComponent, {:saved, _order}}, socket) do
+  filter_opts = parse_filters(socket.assigns.filters)
+  {:noreply, load_view_data(socket, socket.assigns.view_mode, filter_opts)}
 end
+```
+
+This drops the now-unused `Ash.load!`/`stream_insert`/`@orders`-prepend logic. The newly-created order appears if it falls within the active view's bounds (in-window + on the first page for the table; in the visible week for the calendar), and `:page_count` is always accurate.
+
+Add a test for the count refresh to the `"table pagination"` describe block in `test/craftplan_web/manage_orders_perf_live_test.exs`:
+
+```elixir
+    @tag role: :staff
+    test "creating an in-window order refreshes the count label", %{conn: conn} do
+      customer = Factory.create_customer!(%{first_name: "Refresh", last_name: "Counts"})
+      product = Factory.create_product!()
+
+      _existing =
+        Factory.create_order_with_items!(
+          customer,
+          [%{product_id: product.id, quantity: 1, unit_price: product.price}],
+          delivery_date: DateTime.add(DateTime.utc_now(), 86_400, :second)
+        )
+
+      {:ok, view, html} = live(conn, ~p"/manage/orders")
+      assert html =~ "of 1"
+
+      send(
+        view.pid,
+        {CraftplanWeb.OrderLive.FormComponent,
+         {:saved,
+          Factory.create_order_with_items!(
+            customer,
+            [%{product_id: product.id, quantity: 1, unit_price: product.price}],
+            delivery_date: DateTime.add(DateTime.utc_now(), 2 * 86_400, :second)
+          )}}
+      )
+
+      assert render(view) =~ "of 2"
+    end
 ```
 
 - [ ] **Step 7: Run the new tests to verify they pass**
