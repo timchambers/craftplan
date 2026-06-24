@@ -121,6 +121,12 @@ Re-running the importer against the same run directory is safe:
 - Orders already imported (deduped by `BOTTLE-<id>` invoice number via the API) are skipped.
 - An already-imported order that is not yet marked paid will be re-stamped paid if the Bottle row shows a paid status.
 
+## Order status & payment
+
+The importer derives these per order rather than hardcoding them:
+- **Status** — orders whose delivery slot is still in the future import as `unconfirmed` (not yet fulfilled); orders whose slot has already passed import as `completed`. This means a forward-dated batch lands as open orders, while a historical backfill lands as completed.
+- **Payment** — an order is stamped paid (`payment_status: PAID`, `paid_at` = Transaction Date) only when the Bottle `Payment Status` column is `Paid` (case-insensitive). Anything else (`Unpaid`, `Refunded`, blank) stays at the default `pending`.
+
 ## Bootstrap (one-time, first import only)
 
 Before the very first run, populate `priv/imports/bottle/price_map.yml` with retail prices for every PID that appears in the Bottle file but does not yet exist in Craftplan. Format:

@@ -13,6 +13,73 @@ defmodule Craftplan.BottleImport.UpsertsTest do
     end)
   end
 
+  # Records every GraphQL request body and answers create/update mutations with
+  # canned success, so tests can assert on what the importer actually sent.
+  defp record_graphql do
+    {:ok, recorder} = Agent.start_link(fn -> [] end)
+
+    Req.Test.stub(ApiClient, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      body = Jason.decode!(raw)
+      Agent.update(recorder, &[body | &1])
+      query = body["query"] || ""
+
+      resp =
+        cond do
+          String.contains?(query, "createOrder") ->
+            %{
+              "data" => %{
+                "createOrder" => %{
+                  "result" => %{"id" => "o1", "invoiceNumber" => "BOTTLE-1"},
+                  "errors" => []
+                }
+              }
+            }
+
+          String.contains?(query, "updateOrder") ->
+            %{
+              "data" => %{
+                "updateOrder" => %{
+                  "result" => %{"id" => "o1", "paymentStatus" => "PAID"},
+                  "errors" => []
+                }
+              }
+            }
+
+          true ->
+            %{"data" => %{}}
+        end
+
+      Req.Test.json(conn, resp)
+    end)
+
+    recorder
+  end
+
+  defp requests(recorder), do: recorder |> Agent.get(& &1) |> Enum.reverse()
+
+  defp create_order_input(recorder) do
+    recorder
+    |> requests()
+    |> Enum.find(fn b -> String.contains?(b["query"] || "", "createOrder") end)
+    |> get_in(["variables", "input"])
+  end
+
+  defp called_update_order?(recorder) do
+    Enum.any?(requests(recorder), &String.contains?(&1["query"] || "", "updateOrder"))
+  end
+
+  defp order_row(slot_day, payment_status) do
+    %{
+      "Bottle ID" => "1",
+      "Transaction Date" => "2026-01-10 10:00:00",
+      "Fulfillment Slot Day" => slot_day,
+      "Fulfillment Slot Time" => "1/1 05:00AM - 1/1 12:00PM",
+      "Fulfillment Method" => "Delivery",
+      "Payment Status" => payment_status
+    }
+  end
+
   test "resolve_product returns existing product without creating" do
     stub_sequence([
       %{
@@ -111,12 +178,101 @@ defmodule Craftplan.BottleImport.UpsertsTest do
     # NOTE: needs the order id; in this path upsert_order looks it up from the unpaid map.
     assert {:ok, :restamped} =
              Upserts.upsert_order(
-               %{"Bottle ID" => "999", "Transaction Date" => "2026-01-10 10:00:00"},
+               %{
+                 "Bottle ID" => "999",
+                 "Transaction Date" => "2026-01-10 10:00:00",
+                 "Payment Status" => "Paid"
+               },
                [],
                %{},
                "c1",
                MapSet.new(["BOTTLE-999"]),
                MapSet.new([%{invoice: "BOTTLE-999", id: "o1"}])
              )
+  end
+
+  test "upsert_order creates a future-dated order as unconfirmed" do
+    recorder = record_graphql()
+
+    assert {:ok, :created} =
+             Upserts.upsert_order(
+               order_row("2099-01-01", "Paid"),
+               [],
+               %{},
+               "c1",
+               MapSet.new(),
+               MapSet.new()
+             )
+
+    assert create_order_input(recorder)["status"] == "unconfirmed"
+  end
+
+  test "upsert_order creates a past-dated order as completed" do
+    recorder = record_graphql()
+
+    assert {:ok, :created} =
+             Upserts.upsert_order(
+               order_row("2020-01-01", "Paid"),
+               [],
+               %{},
+               "c1",
+               MapSet.new(),
+               MapSet.new()
+             )
+
+    assert create_order_input(recorder)["status"] == "completed"
+  end
+
+  test "upsert_order stamps the order paid when Payment Status is Paid" do
+    recorder = record_graphql()
+
+    assert {:ok, :created} =
+             Upserts.upsert_order(
+               order_row("2020-01-01", "Paid"),
+               [],
+               %{},
+               "c1",
+               MapSet.new(),
+               MapSet.new()
+             )
+
+    assert called_update_order?(recorder)
+  end
+
+  test "upsert_order leaves payment pending when Payment Status is not Paid" do
+    recorder = record_graphql()
+
+    assert {:ok, :created} =
+             Upserts.upsert_order(
+               order_row("2020-01-01", "Unpaid"),
+               [],
+               %{},
+               "c1",
+               MapSet.new(),
+               MapSet.new()
+             )
+
+    refute called_update_order?(recorder)
+  end
+
+  test "upsert_order does not re-stamp an existing unpaid order when the sheet is not Paid" do
+    recorder = record_graphql()
+
+    row =
+      "2020-01-01"
+      |> order_row("Unpaid")
+      |> Map.put("Bottle ID", "999")
+
+    assert {:skip, :already_imported} =
+             Upserts.upsert_order(
+               row,
+               [],
+               %{},
+               "c1",
+               MapSet.new(["BOTTLE-999"]),
+               MapSet.new([%{invoice: "BOTTLE-999", id: "o1"}])
+             )
+
+    refute called_update_order?(recorder)
   end
 end

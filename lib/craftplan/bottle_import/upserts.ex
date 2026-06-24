@@ -109,7 +109,9 @@ defmodule Craftplan.BottleImport.Upserts do
 
     cond do
       unpaid_entry = Enum.find(unpaid, &(&1.invoice == invoice_number)) ->
-        restamp(unpaid_entry.id, paid_at)
+        if paid?(order_row),
+          do: restamp(unpaid_entry.id, paid_at),
+          else: {:skip, :already_imported}
 
       MapSet.member?(already_imported, invoice_number) ->
         {:skip, :already_imported}
@@ -131,17 +133,47 @@ defmodule Craftplan.BottleImport.Upserts do
         "deliveryDate" => DateTime.to_iso8601(delivery_date),
         "deliveryMethod" => map_delivery_method(order_row["Fulfillment Method"]),
         "invoiceNumber" => invoice_number,
-        "status" => "completed",
+        "status" => order_status(delivery_date),
         "paymentMethod" => "card",
         "items" => item_inputs
       }
 
       with {:ok, order} <-
-             ApiClient.mutate(Queries.create_order(), %{"input" => input}, "createOrder"),
-           {:ok, :restamped} <- restamp(order["id"], paid_at) do
-        {:ok, :created}
+             ApiClient.mutate(Queries.create_order(), %{"input" => input}, "createOrder") do
+        maybe_stamp_paid(order["id"], order_row, paid_at)
       end
     end
+  end
+
+  # Order status derives from the delivery slot: a slot still in the future means
+  # the order hasn't been fulfilled yet (:unconfirmed); a past/elapsed slot is
+  # treated as :completed (the historical-import case).
+  defp order_status(%DateTime{} = delivery_date) do
+    if DateTime.after?(delivery_date, DateTime.utc_now()) do
+      "unconfirmed"
+    else
+      "completed"
+    end
+  end
+
+  # Stamp a freshly-created order paid only when the Bottle row says so; otherwise
+  # leave it at the resource default (:pending). Returns {:ok, :created} either way.
+  defp maybe_stamp_paid(order_id, order_row, paid_at) do
+    if paid?(order_row) do
+      with {:ok, :restamped} <- restamp(order_id, paid_at), do: {:ok, :created}
+    else
+      {:ok, :created}
+    end
+  end
+
+  # A Bottle order counts as paid only when its "Payment Status" is "Paid"
+  # (case-insensitive). Anything else — Unpaid, Refunded, blank — stays pending.
+  defp paid?(order_row) do
+    order_row
+    |> Map.get("Payment Status")
+    |> to_string()
+    |> String.trim()
+    |> String.downcase() == "paid"
   end
 
   defp restamp(order_id, paid_at) do
