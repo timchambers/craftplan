@@ -72,6 +72,39 @@ defmodule CraftplanWeb.SettingsLive.FormComponent do
           </section>
 
           <section
+            id="labor-settings"
+            aria-labelledby="labor-settings-title"
+            class="rounded-lg border border-stone-200 bg-stone-50"
+          >
+            <div class="border-b border-stone-200 px-4 py-3">
+              <h3 id="labor-settings-title" class="text-base font-semibold text-stone-800">
+                Labor &amp; Costing
+              </h3>
+              <p class="mt-1 text-sm text-stone-600">
+                Defaults used to estimate labor cost in recipes. Overhead is a decimal, e.g. 0.15 for 15%.
+              </p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
+              <.input
+                field={@form[:labor_hourly_rate]}
+                type="number"
+                step="0.01"
+                min="0"
+                label="Default hourly rate"
+                placeholder="0.00"
+              />
+              <.input
+                field={@form[:labor_overhead_percent]}
+                type="number"
+                step="0.001"
+                min="0"
+                label="Overhead"
+                placeholder="0.15"
+              />
+            </div>
+          </section>
+
+          <section
             id="fulfillment-settings"
             aria-labelledby="fulfillment-settings-title"
             class="rounded-lg border border-stone-200 bg-stone-50"
