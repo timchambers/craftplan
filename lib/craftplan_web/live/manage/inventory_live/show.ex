@@ -6,8 +6,6 @@ defmodule CraftplanWeb.InventoryLive.Show do
   alias Craftplan.Inventory.Movement
   alias CraftplanWeb.Navigation
 
-  require Ash.Query
-
   defp movements_query do
     Movement
     |> Ash.Query.sort(occurred_at: :desc)

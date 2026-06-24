@@ -24,8 +24,6 @@ defmodule Mix.Tasks.Bottle.Import do
   alias Craftplan.BottleImport.Queries
   alias Craftplan.BottleImport.Upserts
 
-  require Logger
-
   @default_price_map "priv/imports/bottle/price_map.yml"
   @audit_log "priv/imports/bottle/bottle_import_log.jsonl"
 

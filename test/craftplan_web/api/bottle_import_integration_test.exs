@@ -30,7 +30,7 @@ defmodule CraftplanWeb.Api.BottleImportIntegrationTest do
     {Map.get(api_key, :__raw_key__), api_key, admin}
   end
 
-  defp graphql(conn, raw_key, query, variables \\ %{}) do
+  defp graphql(conn, raw_key, query, variables) do
     conn
     |> put_req_header("authorization", "Bearer #{raw_key}")
     |> put_req_header("content-type", "application/json")
