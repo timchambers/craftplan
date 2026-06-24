@@ -81,7 +81,7 @@ defmodule CraftplanWeb.InventoryLive.Index do
                   </div>
                 </:empty>
                 <:col :let={{_, material}} label="Material">
-                  <span class={if material.archived_at, do: "text-stone-400 italic", else: ""}>
+                  <span class={if material.archived_at, do: "italic text-stone-400", else: ""}>
                     {material.name}
                   </span>
                   <.badge :if={material.archived_at} text="archived" />
@@ -95,7 +95,9 @@ defmodule CraftplanWeb.InventoryLive.Index do
                   {format_amount(material.unit, material.current_stock)}
                 </:col>
                 <:col :let={{_, material}} label="Price">
-                  {format_unit_price(@settings.currency, material.price)} per {Craftplan.Types.Unit.abbreviation(material.unit)}
+                  {format_unit_price(@settings.currency, material.price)} per {Craftplan.Types.Unit.abbreviation(
+                    material.unit
+                  )}
                 </:col>
                 <:action :let={{_, material}}>
                   <div class="sr-only">
@@ -679,31 +681,28 @@ defmodule CraftplanWeb.InventoryLive.Index do
     end
   end
 
-  defp destroy_error_message(%Ash.Error.Invalid{errors: [%{message: message} | _]})
-       when is_binary(message),
-       do: message
-
-  defp destroy_error_message(_), do: "Failed to delete material."
-
   @impl true
   def handle_event("archive", %{"id" => id}, socket) do
     actor = socket.assigns.current_user
 
-    with material <- Inventory.get_material_by_id!(id, actor: actor),
-         {:ok, _archived} <- Inventory.archive_material(material, actor: actor) do
-      socket =
-        if socket.assigns.include_archived do
-          # Refresh row in-place when archived materials are visible
-          updated = Inventory.get_material_by_id!(id, actor: actor, load: [:current_stock])
-          stream_insert(socket, :materials, updated)
-        else
-          # Default list hides archived, so drop the row
-          stream_delete(socket, :materials, %{id: id})
-        end
+    material = Inventory.get_material_by_id!(id, actor: actor)
 
-      {:noreply, put_flash(socket, :info, "Material archived")}
-    else
-      {:error, _} -> {:noreply, put_flash(socket, :error, "Failed to archive material.")}
+    case Inventory.archive_material(material, actor: actor) do
+      {:ok, _archived} ->
+        socket =
+          if socket.assigns.include_archived do
+            # Refresh row in-place when archived materials are visible
+            updated = Inventory.get_material_by_id!(id, actor: actor, load: [:current_stock])
+            stream_insert(socket, :materials, updated)
+          else
+            # Default list hides archived, so drop the row
+            stream_delete(socket, :materials, %{id: id})
+          end
+
+        {:noreply, put_flash(socket, :info, "Material archived")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Failed to archive material.")}
     end
   end
 
@@ -711,16 +710,19 @@ defmodule CraftplanWeb.InventoryLive.Index do
   def handle_event("unarchive", %{"id" => id}, socket) do
     actor = socket.assigns.current_user
 
-    with material <- Inventory.get_material_by_id!(id, actor: actor),
-         {:ok, _restored} <- Inventory.unarchive_material(material, actor: actor) do
-      updated = Inventory.get_material_by_id!(id, actor: actor, load: [:current_stock])
+    material = Inventory.get_material_by_id!(id, actor: actor)
 
-      {:noreply,
-       socket
-       |> put_flash(:info, "Material restored")
-       |> stream_insert(:materials, updated)}
-    else
-      {:error, _} -> {:noreply, put_flash(socket, :error, "Failed to unarchive material.")}
+    case Inventory.unarchive_material(material, actor: actor) do
+      {:ok, _restored} ->
+        updated = Inventory.get_material_by_id!(id, actor: actor, load: [:current_stock])
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Material restored")
+         |> stream_insert(:materials, updated)}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Failed to unarchive material.")}
     end
   end
 
@@ -730,6 +732,10 @@ defmodule CraftplanWeb.InventoryLive.Index do
 
     {:noreply, stream_insert(socket, :materials, material)}
   end
+
+  defp destroy_error_message(%Ash.Error.Invalid{errors: [%{message: message} | _]}) when is_binary(message), do: message
+
+  defp destroy_error_message(_), do: "Failed to delete material."
 
   defp forecast_status(day_quantity, balance) do
     cond do
