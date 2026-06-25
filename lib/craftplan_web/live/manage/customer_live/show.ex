@@ -13,6 +13,11 @@ defmodule CraftplanWeb.CustomerLive.Show do
     ~H"""
     <.header>
       {@customer.full_name}
+      <:actions>
+        <.link patch={~p"/manage/customers/#{@customer.reference}/edit"} phx-click={JS.push_focus()}>
+          <.button variant={:primary}>Edit customer</.button>
+        </.link>
+      </:actions>
     </.header>
 
     <.sub_nav links={@tabs_links} />
@@ -89,6 +94,26 @@ defmodule CraftplanWeb.CustomerLive.Show do
         </div>
       </.tabs_content>
     </div>
+
+    <.modal
+      :if={@live_action == :edit}
+      id="customer-modal"
+      title={@page_title}
+      description="Use this form to manage customer records in your database."
+      show
+      on_cancel={JS.patch(~p"/manage/customers/#{@customer.reference}/details")}
+    >
+      <.live_component
+        module={CraftplanWeb.CustomerLive.FormComponent}
+        id={@customer.id}
+        title={@page_title}
+        action={@live_action}
+        current_user={@current_user}
+        customer={@customer}
+        settings={@settings}
+        patch={~p"/manage/customers/#{@customer.reference}/details"}
+      />
+    </.modal>
     """
   end
 
@@ -142,8 +167,16 @@ defmodule CraftplanWeb.CustomerLive.Show do
     {:noreply, Navigation.assign(socket, :customers, customer_trail(customer, live_action))}
   end
 
+  @impl true
+  def handle_info({CraftplanWeb.CustomerLive.FormComponent, {:saved, _customer}}, socket) do
+    # The form patches back to the details route, which reloads the customer
+    # via handle_params; nothing more to do here.
+    {:noreply, socket}
+  end
+
   defp page_title(:show), do: "Customer Details"
   defp page_title(:details), do: "Customer Details"
+  defp page_title(:edit), do: "Edit Customer"
   defp page_title(:orders), do: "Customer Orders"
   defp page_title(:statistics), do: "Customer Statistics"
 

@@ -63,6 +63,49 @@ defmodule CraftplanWeb.ManageCustomersInteractionsLiveTest do
   end
 
   @tag role: :staff
+  test "customer can be edited from the detail page (#26)", %{conn: conn} do
+    c = create_customer!()
+
+    {:ok, view, _html} = live(conn, ~p"/manage/customers/#{c.reference}")
+
+    # The detail page must expose an Edit affordance (previously missing entirely).
+    view
+    |> element("a", "Edit customer")
+    |> render_click()
+
+    assert_patch(view, ~p"/manage/customers/#{c.reference}/edit")
+    assert has_element?(view, "#customer-modal")
+
+    view
+    |> element("#customer-form")
+    |> render_submit(%{
+      "customer" => %{
+        "type" => "individual",
+        "first_name" => "Renamed",
+        "last_name" => "Lovelace",
+        "email" => c.email,
+        "billing_address" => %{
+          "street" => "123 Main St",
+          "city" => "Springfield",
+          "state" => "IL",
+          "zip" => "62701",
+          "country" => "US"
+        },
+        "shipping_address" => %{
+          "street" => "456 Oak Ave",
+          "city" => "Shelbyville",
+          "state" => "IL",
+          "zip" => "62565",
+          "country" => "US"
+        }
+      }
+    })
+
+    assert render(view) =~ "Customer updated successfully"
+    assert render(view) =~ "Renamed"
+  end
+
+  @tag role: :staff
   test "customer orders tab 'New Order' navigates to orders/new", %{conn: conn} do
     c = create_customer!()
 

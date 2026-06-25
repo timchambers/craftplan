@@ -43,7 +43,7 @@ defmodule CraftplanWeb.CustomerLive.Index do
     </.table>
 
     <.modal
-      :if={@live_action in [:new, :edit]}
+      :if={@live_action == :new}
       id="customer-modal"
       title={@page_title}
       description="Use this form to manage customer records in your database."
@@ -85,30 +85,6 @@ defmodule CraftplanWeb.CustomerLive.Index do
     {:noreply, Navigation.assign(socket, :customers, customer_index_trail(socket.assigns))}
   end
 
-  defp apply_action(socket, :edit, %{"id" => id}) do
-    socket
-    |> assign(:page_title, "Edit Customer")
-    |> assign(
-      :customer,
-      Craftplan.CRM.get_customer_by_id!(id,
-        actor: socket.assigns.current_user,
-        load: [:billing_address, :shipping_address]
-      )
-    )
-  end
-
-  defp apply_action(socket, :edit, %{"reference" => reference}) do
-    socket
-    |> assign(:page_title, "Edit Customer")
-    |> assign(
-      :customer,
-      Craftplan.CRM.get_customer_by_reference!(reference,
-        actor: socket.assigns.current_user,
-        load: [:billing_address, :shipping_address]
-      )
-    )
-  end
-
   defp apply_action(socket, :new, _params) do
     socket
     |> assign(:page_title, "New Customer")
@@ -123,9 +99,6 @@ defmodule CraftplanWeb.CustomerLive.Index do
 
   defp customer_index_trail(%{live_action: :new}),
     do: [Navigation.root(:customers), Navigation.page(:customers, :new_customer)]
-
-  defp customer_index_trail(%{live_action: :edit, customer: %{} = customer}),
-    do: [Navigation.root(:customers), Navigation.resource(:customer, customer)]
 
   defp customer_index_trail(_), do: [Navigation.root(:customers)]
 
