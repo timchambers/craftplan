@@ -17,6 +17,31 @@ defmodule CraftplanWeb.ManageSettingsInteractionsLiveTest do
   end
 
   @tag role: :admin
+  test "general settings expose labor rate and overhead fields (#22)", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/manage/settings/general")
+
+    assert html =~ ~s(name="settings[labor_hourly_rate]")
+    assert html =~ ~s(name="settings[labor_overhead_percent]")
+  end
+
+  @tag role: :admin
+  test "labor rate and overhead can be edited from settings (#22)", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/manage/settings/general")
+
+    view
+    |> element("#settings-form")
+    |> render_submit(%{
+      "settings" => %{"labor_hourly_rate" => "25.5", "labor_overhead_percent" => "0.15"}
+    })
+
+    assert render(view) =~ "Settings updated successfully"
+
+    settings = Craftplan.Settings.get_settings!()
+    assert Decimal.equal?(settings.labor_hourly_rate, Decimal.new("25.5"))
+    assert Decimal.equal?(settings.labor_overhead_percent, Decimal.new("0.15"))
+  end
+
+  @tag role: :admin
   test "add and delete allergen in settings", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/manage/settings/allergens")
 
