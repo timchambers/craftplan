@@ -19,7 +19,7 @@ defmodule CraftplanWeb.InventoryLive.FormComponentMaterial do
         <.input field={@form[:name]} type="text" label="Name" />
         <.input field={@form[:sku]} type="text" label="SKU" />
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <.input field={@form[:price]} type="number" label="Price" step="0.001" min="0" />
+          <.input field={@form[:price]} type="number" label="Price" step="any" min="0" />
 
           <.input
             field={@form[:unit]}
